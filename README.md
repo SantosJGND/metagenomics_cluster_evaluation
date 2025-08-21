@@ -8,6 +8,7 @@ The project is structured to facilitate the evaluation of clustering methods on 
 
 - **simulation**: Simulating reads from reference assemblies to create a controlled dataset for testing.
 - **classification/**: Classifying metagenomic reads using Centrifuge and Kraken2 classifiers.
+- **reference_management/**: Managing reference assemblies, including fetching representative assemblies from NCBI, local db management, and checking assembly existence.
 - **mappings**: Mapping classified reads to reference assemblies to evaluate the accuracy of classifications.
 - **clustering/**: Clustering classified reads and evaluating the clusters.
 - **deployment/**: Contains deployment scripts and parameters for running the project in different environments.
