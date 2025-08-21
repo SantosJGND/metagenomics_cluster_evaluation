@@ -79,7 +79,7 @@ class AssemblyStore:
         
         # If not found locally, fetch from NCBI
         print(f"Fetching assembly for taxid {taxid} from NCBI...")
-        accession, fasta_url = get_representative_assembly(taxid)
+        accession, fasta_url, _ = get_representative_assembly(taxid)
 
         if not accession:
             print(f"No assembly found for taxid {taxid} in NCBI")
@@ -171,31 +171,57 @@ class AssemblyStore:
 import argparse
 
 def get_args():
-    parser = argparse.ArgumentParser(description="Match taxids to their respective assemblies.")
-    parser.add_argument(
-        "--classification_output_path", 
-        type=str, 
-        required=True, 
+    """
+    Define the argument parser with subcommands.
+    """
+    parser = argparse.ArgumentParser(description="Manage taxid-to-assembly retrieval and reference setup.")
+    subparsers = parser.add_subparsers(dest="command", required=True, help="Subcommands: retrieve or check")
+
+    # Subcommand: retrieve
+    retrieve_parser = subparsers.add_parser("retrieve", help="Retrieve assemblies based on the input table.")
+    retrieve_parser.add_argument(
+        "--input_table",
+        type=str,
+        required=True,
         help="Path to the classification output file."
     )
-    parser.add_argument(
-        "--assembly_store", 
-        type=str, 
-        default="assemblies", 
+    retrieve_parser.add_argument(
+        "--assembly_store",
+        type=str,
+        default="assemblies",
         help="Directory to store downloaded assemblies."
     )
-    parser.add_argument(
-        "--mapping_references_dir", 
-        type=str, 
-        default="references_to_map", 
+    retrieve_parser.add_argument(
+        "--mapping_references_dir",
+        type=str,
+        default="references_to_map",
         help="Directory to store mapping references."
     )
+
+    # Subcommand: check
+    check_parser = subparsers.add_parser("check", help="Check if mapping ids can be retrieved.")
+    check_parser.add_argument(
+        "--input_table",
+        type=str,
+        required=True,
+        help="Path to the classification output file."
+    )
+
+    check_parser.add_argument(
+        "--assessment",
+        type=str,
+        default="assembly_assessment.tsv",
+        help="Path to the assessment file to check assemblies."
+    )
+
     return parser.parse_args()
 
-def main():
 
-    args = get_args()
-    classification_output_path = args.classification_output_path
+def retrieve_assemblies(args):
+    """
+    Retrieve assemblies based on the input table and store them in the specified directory.
+    """
+    classification_output_path = args.input_table
     assembly_store = args.assembly_store
     mapping_references_dir = args.mapping_references_dir
 
@@ -207,6 +233,55 @@ def main():
         index=False,
         sep='\t'
     )
+
+def check_assemblies_exist(args):
+    """
+    Check if the assemblies can be retrieved from the input table.
+    """
+
+    input_table = args.input_table
+    df = pd.read_csv(input_table, sep='\t')
+    taxid_col = None
+    if 'taxid' in df.columns:
+        taxid_col = 'taxid'
+    elif 'TaxID' in df.columns:
+        taxid_col = 'TaxID'
+    elif 'taxon' in df.columns:
+        taxid_col = 'taxon'
+    else:
+        raise ValueError("The classification output file must contain a taxonomic ID column [taxid, taxID or taxon].")
+
+    def check_assembly_exists(row, taxid_col):
+        """
+        Check if the assembly for the given taxid exists.
+        """
+        taxid = str(int(row[taxid_col]))
+
+        accession, fasta_url, description = get_representative_assembly(taxid)
+
+        if not accession or not fasta_url:
+            print(f"No assembly found for taxid {taxid} in NCBI")
+            return None
+        if not fasta_url:
+            print(f"No assembly found for taxid {taxid} in NCBI")
+            return None
+        row['assembly_accession'] = accession
+        row['description'] = description
+        return row
+        
+    df = df.apply(lambda row: check_assembly_exists(row, taxid_col), axis=1)
+    df.to_csv(args.assessment, index=False, sep='\t')
+
+def main():
+
+    args = get_args()
+
+    if args.command == "retrieve":
+        retrieve_assemblies(args)
+    elif args.command == "check":
+        check_assemblies_exist(args)
+    
+
 
 if __name__ == "__main__":
     main()

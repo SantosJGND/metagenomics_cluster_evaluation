@@ -10,7 +10,7 @@ def get_representative_assembly(taxid):
     handle.close()
     if not record['IdList']:
         print(f"No assemblies found for taxid {taxid}")
-        return None, None
+        return None, None, None
     # Get summary for the first assembly (could filter for 'representative genome' here)
     assembly_id = record['IdList'][0]
     print(f"Found assembly ID: {assembly_id} for taxid {taxid}")
@@ -20,10 +20,11 @@ def get_representative_assembly(taxid):
     docsum = summary['DocumentSummarySet']['DocumentSummary'][0]
     ftp_path = docsum['FtpPath_RefSeq'] or docsum['FtpPath_GenBank']
     accession = docsum['AssemblyAccession']
+    description = docsum.get('SpeciesName', 'No description available')
     if not ftp_path:
         print(f"No FTP path found for taxid {taxid}")
         return accession, None
     # Find the genomic fasta file
     asm_name = ftp_path.split('/')[-1]
     fasta_url = f"{ftp_path}/{asm_name}_genomic.fna.gz"
-    return accession, fasta_url
+    return accession, fasta_url, description

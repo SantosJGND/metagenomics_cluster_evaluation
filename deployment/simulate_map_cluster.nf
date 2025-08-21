@@ -103,8 +103,8 @@ process ExtractFastaSequences {
 
     script:
     """
-    ${params.python_bin} ${params.references_extract_script} \
-    --classification_output_path ${input_table} \
+    ${params.python_bin} ${params.references_extract_script} retrieve \
+    --input_table ${input_table} \
     --assembly_store "${params.assembly_store}" \
     --mapping_references_dir "reference_sequences" 
     """
