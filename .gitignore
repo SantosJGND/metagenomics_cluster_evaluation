@@ -1,0 +1,7 @@
+*.venv
+test_run/
+Miniforge3.sh
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
