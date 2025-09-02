@@ -6,7 +6,7 @@
     "python_env": "/home/bioinf/Desktop/INSA/Projectos/CLUSTER_EVAL/.venv",
     "read_type": "PE",
     "references": "input_references",
-    "output_dir": "output",
+    "output_dir": "output_good",
     "assembly_store": "/home/bioinf/Desktop/INSA/Projectos/CLUSTER_EVAL/test_run/assembly_store",
     "prinseq_params": "--lc_entropy 0.5 --lc_dust 0.7",
     "minimap2_nanopore_params": "-ax map-ont --secondary=no",
@@ -25,6 +25,6 @@
     "mess_conda_env": "/home/bioinf/miniforge3/envs/mess",
     "mosdepth_conda_env": "/home/bioinf/miniforge3/envs/mosdepth",
     "map_to_matrix_bin": "/home/bioinf/Desktop/INSA/Projectos/CLUSTER_EVAL/clustering/mapping_to_matrix",
-    "map_to_matrix_params": "-t 0.2 -f 0.01 -a -m 500000"
+    "map_to_matrix_params": "-t 0.8 -f 0.01 -a -m 500000"
 
 }

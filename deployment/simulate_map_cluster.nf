@@ -12,7 +12,7 @@ workflow {
     input_table_ch = FormatToMess(input_table_ch, matched_table_ch.input_table_with_sequences)
 
     // Simulate reads based on the input table
-    reads_ch = SimulateReadsMess("illumina", input_table_ch).map { table_id, fastq_files ->
+    reads_ch = SimulateReadsMess(params.technology, input_table_ch).map { table_id, fastq_files ->
         // Unpack the list of FASTQ files into separate variables
         def (fastq1, fastq2) = fastq_files
         tuple(table_id, fastq1, fastq2)
@@ -332,6 +332,7 @@ process ClusterMappedReads {
     output:
     path "clustering/clade_report.txt", emit: clade_report
     path "clustering/sample_report.txt", emit: sample_report
+    path "clustering/distance_matrix.txt", emit: distance_matrix
 
     script:
     def mapped_reads_string = mapped_reads.collect { it[0] }.join(',')
@@ -384,8 +385,8 @@ process ExtractReferenceSequences {
 
     script:
     """
-    ${params.python_bin} ${params.references_extract_script} \
-    --classification_output_path ${classifier_output} \
+    ${params.python_bin} ${params.references_extract_script} retrieve \
+    --input_table ${classifier_output} \
     --assembly_store "${params.assembly_store}" \
     --mapping_references_dir "reference_sequences" 
     """

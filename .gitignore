@@ -5,3 +5,5 @@ Miniforge3.sh
 __pycache__/
 *.pyo
 *.pyd
+*params_local.json
+

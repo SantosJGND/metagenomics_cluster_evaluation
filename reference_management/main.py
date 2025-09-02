@@ -1,4 +1,4 @@
-from utils.ncbi_tools import get_representative_assembly
+from utils.ncbi_tools import get_representative_assembly, retrieve_sequence_databases, query_sequence_databases
 import os
 from typing import Optional, Tuple
 import pandas as pd
@@ -79,29 +79,20 @@ class AssemblyStore:
         
         # If not found locally, fetch from NCBI
         print(f"Fetching assembly for taxid {taxid} from NCBI...")
-        accession, fasta_url, _ = get_representative_assembly(taxid)
-
-        if not accession:
-            print(f"No assembly found for taxid {taxid} in NCBI")
-            return None
-        
-        if not fasta_url:
-            print(f"No assembly found for taxid {taxid} in NCBI")
-            return None
-        
-        # Download the assembly file
+        reference_data = query_sequence_databases(taxid)
         assembly_dir = os.path.join(self.store_path, taxid)
         os.makedirs(assembly_dir, exist_ok=True)
-        assembly_file_path = os.path.join(
-            assembly_dir, fasta_url.split('/')[-1]
-        )
-        success_dl = dl_file_wget(fasta_url, assembly_file_path)
+        
+        output_path = os.path.join(assembly_dir, f"{taxid}_sequence.fasta.gz")
+
+        success_dl, assembly_file_path = retrieve_sequence_databases(reference_data, output_path, gzipped=True)
+
 
         if not success_dl:
             print(f"Failed to download assembly for taxid {taxid}")
             return None
         
-        return accession, assembly_file_path
+        return reference_data.accession, assembly_file_path
 
     def match_taxid_to_assembly(
         self,
@@ -257,16 +248,13 @@ def check_assemblies_exist(args):
         """
         taxid = str(int(row[taxid_col]))
 
-        accession, fasta_url, description = get_representative_assembly(taxid)
+        reference_data = query_sequence_databases(taxid)
 
-        if not accession or not fasta_url:
-            print(f"No assembly found for taxid {taxid} in NCBI")
-            return None
-        if not fasta_url:
-            print(f"No assembly found for taxid {taxid} in NCBI")
-            return None
-        row['assembly_accession'] = accession
-        row['description'] = description
+        row['assembly_accession'] = reference_data.accession
+        row['description'] = reference_data.description
+        row['nucleotide_id'] = reference_data.nucleotide_id
+        row['assembly_id'] = reference_data.assembly_id
+
         return row
         
     df = df.apply(lambda row: check_assembly_exists(row, taxid_col), axis=1)
