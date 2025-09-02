@@ -1,3 +1,4 @@
+.env
 *.venv
 test_run/
 Miniforge3.sh
