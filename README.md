@@ -53,3 +53,24 @@ nextflow run main.nf -profile conda --params_file deployment/params.json
 ```
 
 This will execute the workflow, simulating reads, classifying them, mapping them to references, clustering the results, and evaluating the clusters.
+
+# Reference extraction
+
+References used for mapping arep stored locally, in an local directory specified in the `params.json` file as the `assembly_store` directory. reference identification is performed using the `Entrez` tool suite, as implemented in the `Bio.Entrez` python package.
+
+### Databases
+
+The software will first check for availability for a specified taxid in the `nucleotide` reference database. If not found, it will resort to the `assembly` database.
+
+## Checking for software behaviour
+
+The reference management module will download references on the fly during workflow deployment. It might be useful
+to first ensure that the references will be available, or if the references to be downloaded are appropriate.
+
+For this, run the `check`submodule of the `references_management/main.py` script on the prospective taxid table:
+
+```bash
+python references_management/main.py check --input_table path/to/taxid_table.tsv --assessment /path/to/assessment.tsv
+```
+
+The output `assessment.tsv` file will contain information on the availability of references for each taxid in the input table.
