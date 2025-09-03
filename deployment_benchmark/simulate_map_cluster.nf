@@ -1,6 +1,7 @@
+params.input_table = params.input_table ?: ""
+
 workflow {
 
-    params.input_table = params.input_table ?: ""
     if (params.input_table == "") {
         error("Input table path is not provided. Please set the 'input_table' parameter.")
     }
@@ -34,7 +35,8 @@ workflow {
     mapped_reads_ch = MapMinimap2Paired(combined_ch, params.minimap2_illumina_params)
 
     // Extract mapping statistics from BAM files
-    sorted_reads_ch = sortBam(mapped_reads_ch)
+    filtered_alignments_ch = FilterBamMsamtools(mapped_reads_ch)
+    sorted_reads_ch = sortBam(filtered_alignments_ch)
     coverage_ch = SamtoolsCoverage(sorted_reads_ch)
 
     // collect all mapping files, provide directory for clustering
@@ -186,6 +188,26 @@ process sortBam {
     samtools index ${query_id}_${reference_id}.sorted.bam
     samtools addreplacerg -r "ID:${query_id}" -r "SM:${query_id}" -o named.bam ${query_id}_${reference_id}.sorted.bam
     mv named.bam ${query_id}_${reference_id}.sorted.bam
+    """
+}
+
+/* 
+* Filter bam file using msamtools
+*/
+process FilterBamMsamtools {
+    tag "FilterBamMsamtools ${bamfile.baseName}"
+
+    publishDir "${params.output_dir}/${query_id}/filtered_reads", mode: 'symlink'
+
+    input:
+    tuple path(bamfile), val(query_id), val(reference_id)
+
+    output:
+    tuple path("${query_id}_${reference_id}.filtered.bam"), val(query_id), val(reference_id)
+
+    script:
+    """
+    msamtools filter -b ${params.msamtools_params} ${bamfile} > ${query_id}_${reference_id}.filtered.bam
     """
 }
 

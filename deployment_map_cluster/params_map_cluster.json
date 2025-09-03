@@ -1,0 +1,21 @@
+{
+    "input_table_dir": "test_run/tables",
+    "technology": "illumina",
+    "reads": "input_reads",
+    "python_bin": ".venv/bin/python3",
+    "python_env": ".venv",
+    "read_type": "PE",
+    "output_dir": "output_good",
+    "assembly_store": "test_run/assembly_store",
+    "prinseq_params": "--lc_entropy 0.5 --lc_dust 0.7",
+    "minimap2_nanopore_params": "-ax map-ont --secondary=no",
+    "minimap2_illumina_params": "-ax sr --secondary=no",
+    "nanofilt_params": "-q 8 -l 50 --headcrop 10 --tailcrop 30 --maxlength 50000",
+    "msamtools_params": "-l 80 -p 95 -z 80",
+    "msamtools_conda_env": "envs/msamtools",
+    "references_extract_script": "reference_management/main.py",
+    "mess_conda_env": "envs/mess",
+    "mosdepth_conda_env": "envs/mosdepth",
+    "map_to_matrix_bin": "clustering/mapping_to_matrix",
+    "map_to_matrix_params": "-t 0.8 -f 0.01 -a -m 500000"
+}

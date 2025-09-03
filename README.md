@@ -1,4 +1,4 @@
-## Benchmarking Cluster Evaluation of Metagenomic Results
+## Mapping Cluster
 
 Metagenomic analysis creates a wealth of data that can be challenging to interpret. One of the main challenges in this field is to discriminate between Cross-Hits - Metagenomic classifiers often return multiple, related, hits. This makes it difficult to determine which hit is the most relevant for a given sample. This project aims to benchmark effectiveness of clustering in resolving these Cross-Hits.
 
@@ -11,8 +11,15 @@ The project is structured to facilitate the evaluation of clustering methods on 
 - **reference_management/**: Managing reference assemblies, including fetching representative assemblies from NCBI, local db management, and checking assembly existence.
 - **mappings**: Mapping classified reads to reference assemblies to evaluate the accuracy of classifications.
 - **clustering/**: Clustering classified reads and evaluating the clusters.
-- **deployment/**: Contains deployment scripts and parameters for running the project in different environments.
 - **reference_management/**: Contains scripts for managing reference assemblies and their taxonomic classifications.
+
+### Deployments
+
+Directories containing deployment scripts and parameters for running
+
+- [**deployment_benchmark/**](deployment_benchmark): Simulate reads, map classified reads to reference assemblies, cluster mapped reads.
+
+- [**deployment_map_cluster/**](deployment_map_cluster): Map reads onto table of provided references, cluster the results.
 
 ## Requirements
 
@@ -20,7 +27,7 @@ The project is structured to facilitate the evaluation of clustering methods on 
 
 - A conda environment with the the following packages:
   - `biopython`
-  - `mess`
+  - `mess` # simulation only
 
 This environment must be activated before running the nextflow workflow.
 
@@ -46,56 +53,3 @@ nextflow run main.nf -profile conda --params_file deployment/params.json
 ```
 
 This will execute the workflow, simulating reads, classifying them, mapping them to references, clustering the results, and evaluating the clusters.
-
-# Nextflow workflow
-
-```mermaid
-
-flowchart TB
-    subgraph " "
-    v0["Input Table"]
-    end
-    v2([ExtractFastaSequences])
-    v3([FormatToMess])
-    v5([SimulateReadsMess])
-    v7([CentrifugeClassificationPaired])
-    v8([Kraken2ClassificationPaired])
-    v9([MergeClassificationResults])
-    v10([ExtractReferenceSequences])
-    v14([MapMinimap2Paired])
-    v15([sortBam])
-    v16([SamtoolsCoverage])
-    v21([MergeCoverageStatistics])
-    v22([ClusterMappedReads])
-    subgraph "Input"
-    end
-    v24([MatchCladeReportWithReferenceSequences])
-    v25([EvaluateClusteringResults])
-    v1(( ))
-    v6(( ))
-    v17(( ))
-    v19(( ))
-    v0 --> v1
-    v1 --> v2
-    v2 --> v3
-    v1 --> v3
-    v3 --> v5
-    v5 --> v6
-    v6 --> v7
-    v7 --> v9
-    v6 --> v8
-    v8 --> v9
-    v9 --> v10
-    v9 --> v24
-    v10 --> v24
-    v10 --> v6
-    v10 --> v14
-    v6 --> v14
-    v14 --> v15
-    v14 --> v22
-    v15 --> v16
-    v16 --> v21
-    v21 --> v24
-    v22 --> v24
-    v24 --> v25
-```
