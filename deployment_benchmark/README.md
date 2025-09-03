@@ -10,7 +10,7 @@ activate the conda environment and run the Nextflow workflow:
 nextflow run main.nf -profile conda --params_file deployment/params.json
 ```
 
-This will execute the workflow, simulating reads, classifying them, mapping them to references, clustering the results, and evaluating the clusters.
+This will execute the workflow, mapping them to references, clustering the results, and evaluating the clusters.
 
 # Nextflow workflow
 
