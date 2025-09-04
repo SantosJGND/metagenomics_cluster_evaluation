@@ -68,7 +68,7 @@ The reference management module will download references on the fly during workf
 to first ensure that the references will be available, or if the references to be downloaded are appropriate.
 
 For this, run the `check`submodule of the `references_management/main.py` script on the prospective taxid table:
-
+flow, simulating re
 ```bash
 python references_management/main.py check --input_table path/to/taxid_table.tsv --assessment /path/to/assessment.tsv
 ```

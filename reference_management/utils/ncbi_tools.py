@@ -3,30 +3,90 @@ from Bio import Entrez
 import os
 import subprocess
 from dataclasses import dataclass
-
+from typing import Tuple, Optional
 # read email from local .env file
 
 import dotenv
 dotenv.load_dotenv()
-
 
 Entrez.email = os.getenv("NCBI_EMAIL", None)
 if Entrez.email is None:
     raise ValueError("NCBI_EMAIL environment variable not set. Please set it to your email address.")
 
 @dataclass
-class ReferenceData:
-    taxid: str = "None"
-    accession: str = "None"
-    description: str = "None"
-    nucleotide_id: str = None
-    assembly_id: str = None
+class Passport:
+    taxid: str
+    accession: Optional[str]
+
+
 
     def __str__(self):
-        return f"Accession: {self.accession}, Description: {self.description}, Nucleotide ID: {self.nucleotide_id}, Assembly ID: {self.assembly_id}"
+        return f"TaxID: {self.taxid}, Accession: {self.accession}"
+
+    @property
+    def prefix(self):
+        if self.accession:
+            return f"{self.taxid}_{self.accession}"
+        else:
+            return f"{self.taxid}"
 
 
-def get_reference_sequence_url(taxid):
+
+
+@dataclass
+class LocalAssembly(Passport):
+
+    file_path: str
+
+    def __str__(self):
+        return f"TaxID: {self.taxid}, Accession: {self.accession}, File Path: {self.file_path}"
+
+    
+@dataclass
+class ReferenceData(Passport):
+
+    description: Optional[str] = None
+    nucleotide_id: Optional[str] = None
+    assembly_id: Optional[str] = None
+
+    def __str__(self):
+        return f"TaxID: {self.taxid}, Accession: {self.accession}, Description: {self.description}, Nucleotide ID: {self.nucleotide_id}, Assembly ID: {self.assembly_id}"
+
+
+def retrieve_reference_sequence_id(accID: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """
+    Retrieve NCBI sequence ID for a given accession ID.
+    """
+    try:
+        handle = Entrez.esearch(db="nucleotide", term=accID, retmax=1)
+        record = Entrez.read(handle)
+        handle.close()
+        if not record['IdList']:
+            raise ValueError(f"No sequence found for accession {accID}")
+        sequence_id = record['IdList'][0]
+        
+        handle = Entrez.esummary(db="nucleotide", id=sequence_id)
+        summary = Entrez.read(handle)
+        handle.close()
+        if summary is None:
+            raise ValueError(f"No summary found for sequence ID {sequence_id}")
+        accession = summary[0]['AccessionVersion']
+        if accession != accID:
+            print(f"Warning: Retrieved accession {accession} does not match requested {accID}")
+        description = summary[0].get('Title', 'No description available')
+        return accession, description, sequence_id
+
+
+    except ValueError as e:
+        print(e)
+        return None, None, None
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None, None, None
+
+
+
+def get_reference_sequence_url(taxid) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """
     Retrieve the reference sequence URL for a given taxid from the nucleotide database.
     """
@@ -47,6 +107,9 @@ def get_reference_sequence_url(taxid):
         summary = Entrez.read(handle)
         handle.close()
 
+        if summary is None:
+            raise ValueError(f"No summary found for sequence ID {sequence_id}")
+
         # Extract the accession number
         docsum = summary[0]
         accession = docsum['AccessionVersion']
@@ -62,27 +125,7 @@ def get_reference_sequence_url(taxid):
         return None, None, None
 
 
-def retrieve_reference_sequence(nucleotide_id, output_path, gzipped=True):
-    """
-    Download the reference sequence file given a nucleotide ID.
-    """
-    try:
-        handle = Entrez.efetch(db="nucleotide", id=nucleotide_id, rettype="fasta", retmode="text")
-        fasta_data = handle.read()
-        handle.close()
-        if gzipped:
-            import gzip
-            with gzip.open(output_path, 'wt') as f:
-                f.write(fasta_data)
-        else:
-            with open(output_path, 'w') as f:
-                f.write(fasta_data)
-        return True
-    except Exception as e:
-        print(f"An error occurred while downloading sequence: {e}")
-        return False
-
-def get_representative_assembly(taxid):
+def get_representative_assembly(taxid) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     try:
         # Search for assemblies for the given taxid
         handle = Entrez.esearch(db="assembly", term=f"txid{taxid}[Organism:exp]", retmax=5)
@@ -107,6 +150,28 @@ def get_representative_assembly(taxid):
     except ValueError as e:
         print(e)
         return None, None, None
+
+
+def retrieve_reference_sequence(nucleotide_id, output_path, gzipped=True):
+    """
+    Download the reference sequence file given a nucleotide ID.
+    """
+    try:
+        handle = Entrez.efetch(db="nucleotide", id=nucleotide_id, rettype="fasta", retmode="text")
+        fasta_data = handle.read()
+        handle.close()
+        if gzipped:
+            import gzip
+            with gzip.open(output_path, 'wt') as f:
+                f.write(fasta_data)
+        else:
+            with open(output_path, 'w') as f:
+                f.write(fasta_data)
+        return True
+    except Exception as e:
+        print(f"An error occurred while downloading sequence: {e}")
+        return False
+
 
 def retrieve_assembly_sequence(assembly_id, output_path):
     """
@@ -133,30 +198,45 @@ def retrieve_assembly_sequence(assembly_id, output_path):
         print(f"An error occurred while downloading assembly: {e}")
         return False
 
-def query_sequence_databases(taxid:str) -> ReferenceData:
+def query_sequence_databases(passport:Passport) -> ReferenceData:
     """
     use both strategies above
     """
 
-    accession, description, nucleotide_id = get_reference_sequence_url(taxid)
-    print(f"Accession: {accession}")
-    print(f"Description: {description}")
+    if passport.accession is not None:
+
+        accession, description, nucleotide_id = retrieve_reference_sequence_id(passport.accession)
+        if nucleotide_id is not None:
+            
+            return ReferenceData(
+                taxid=passport.taxid,
+                accession=passport.accession,
+                description=description,
+                nucleotide_id=nucleotide_id
+            )
+        else:
+            print(f"No nucleotide ID found for accession {passport.accession}, falling back to taxid search.")
+        
+
+    accession, description, nucleotide_id = get_reference_sequence_url(passport.taxid)
+
     if accession is not None and nucleotide_id is not None:
         return ReferenceData(
-            taxid=taxid,
+            taxid=passport.taxid,
             accession=accession,
             description=description,
             nucleotide_id=nucleotide_id
         )
-    accession, description, assembly_id = get_representative_assembly(taxid)
-
-
+    
+    accession, description, assembly_id = get_representative_assembly(passport.taxid)
+    
     return ReferenceData(
-        taxid=taxid,
+        taxid=passport.taxid,
         accession=accession,
         description=description,
         assembly_id=assembly_id
     )
+
 
 def retrieve_sequence_databases(reference_data:ReferenceData, output_path:str, gzipped=True):
     """
@@ -176,4 +256,4 @@ def retrieve_sequence_databases(reference_data:ReferenceData, output_path:str, g
         return success, output_path
     
     print(f"No sequence data found for taxid {reference_data.taxid}")
-    return False, output_path
+    return False

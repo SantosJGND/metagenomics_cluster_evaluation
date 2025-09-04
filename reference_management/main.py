@@ -1,4 +1,4 @@
-from utils.ncbi_tools import get_representative_assembly, retrieve_sequence_databases, query_sequence_databases
+from utils.ncbi_tools import Passport, retrieve_sequence_databases, query_sequence_databases, LocalAssembly
 import os
 from typing import Optional, Tuple
 import pandas as pd
@@ -46,7 +46,7 @@ class AssemblyStore:
         return os.path.join(self.store_path, taxid)
 
 
-    def retrieve_local_assembly(self, taxid) -> Optional[Tuple[str, str]]:
+    def retrieve_local_assembly(self, taxid) -> Optional[LocalAssembly]:
         """
         Check if the assembly for the given taxid exists in the assembly store.
         """
@@ -62,37 +62,42 @@ class AssemblyStore:
         # Assuming the first file is the assembly file
         assembly_file = [x for x in taxid_files if x.endswith('.gz')]
 
+        if not assembly_file:
+            print(f"No assembly file found for taxid {taxid}")
+            return None
+
         accid = "_".join(taxid_files[0].split('_')[:2]) if assembly_file else None
 
-        return accid, os.path.join(taxid_subdir, assembly_file[0]) if assembly_file else None
+        return LocalAssembly(taxid=taxid, accession=accid, file_path=os.path.join(taxid_subdir, assembly_file[0])) if assembly_file else None
 
 
-    def retrieve_assembly(self, taxid: str) -> Optional[Tuple[str, str]]:
+
+    def retrieve_assembly(self, passport: Passport) -> Optional[LocalAssembly]:
         """
         Retrieve the assembly for the given taxid, either from local storage or NCBI.
         """
         # First, check if the assembly is available locally
-        local_assembly = self.retrieve_local_assembly(taxid)
+        local_assembly = self.retrieve_local_assembly(passport.taxid)
         if local_assembly:
-            print(f"Using local assembly for taxid {taxid}: {local_assembly[0]}")
+            print(f"Using local assembly for taxid {passport.taxid}: {local_assembly.file_path}")
             return local_assembly
         
         # If not found locally, fetch from NCBI
-        print(f"Fetching assembly for taxid {taxid} from NCBI...")
-        reference_data = query_sequence_databases(taxid)
-        assembly_dir = os.path.join(self.store_path, taxid)
+        print(f"Fetching assembly for taxid {passport.taxid} from NCBI...")
+
+        reference_data = query_sequence_databases(passport)
+        assembly_dir = os.path.join(self.store_path, passport.prefix)
         os.makedirs(assembly_dir, exist_ok=True)
         
-        output_path = os.path.join(assembly_dir, f"{taxid}_sequence.fasta.gz")
-
-        success_dl, assembly_file_path = retrieve_sequence_databases(reference_data, output_path, gzipped=True)
+        assembly_file_path = os.path.join(assembly_dir, f"{passport.prefix}_sequence.fasta.gz")
+        success_dl = retrieve_sequence_databases(reference_data, assembly_file_path, gzipped=True)
 
 
         if not success_dl:
-            print(f"Failed to download assembly for taxid {taxid}")
+            print(f"Failed to download assembly for passport {passport.taxid}")
             return None
         
-        return reference_data.accession, assembly_file_path
+        return LocalAssembly(taxid=passport.taxid, accession=reference_data.accession, file_path=assembly_file_path)
 
     def match_taxid_to_assembly(
         self,
@@ -121,10 +126,11 @@ class AssemblyStore:
         for index, row in df.iterrows():
             taxid = str(int(row[taxid_col]))
             print(f"Processing taxid {taxid}...")
-            accession, assembly_file = self.retrieve_assembly(taxid)
-            if accession and assembly_file:
-                df.at[index, 'assembly_accession'] = accession
-                df.at[index, 'assembly_file'] = assembly_file
+            passport = Passport(taxid = taxid, accession = None)
+            local_assembly = self.retrieve_assembly(passport)
+            if local_assembly:
+                df.at[index, 'assembly_accession'] = local_assembly.accession
+                df.at[index, 'assembly_file'] = local_assembly.file_path
 
         return df
 
@@ -232,23 +238,55 @@ def check_assemblies_exist(args):
 
     input_table = args.input_table
     df = pd.read_csv(input_table, sep='\t')
-    taxid_col = None
+    taxid_col = False
     if 'taxid' in df.columns:
-        taxid_col = 'taxid'
+        df.rename(columns={'taxid': 'taxid'}, inplace=True)
+        taxid_col = True
     elif 'TaxID' in df.columns:
-        taxid_col = 'TaxID'
+        df.rename(columns={'TaxID': 'taxid'}, inplace=True)
+        taxid_col = True
     elif 'taxon' in df.columns:
-        taxid_col = 'taxon'
-    else:
-        raise ValueError("The classification output file must contain a taxonomic ID column [taxid, taxID or taxon].")
+        df.rename(columns={'taxon': 'taxid'}, inplace=True)
+        taxid_col = True
 
-    def check_assembly_exists(row, taxid_col):
+
+    accid_col = False
+    if 'assembly_accession' in df.columns:
+        df.rename(columns={'assembly_accession': 'accid'}, inplace=True)
+        accid_col = True
+    elif "accession" in df.columns:
+        df.rename(columns={'accession': 'accid'}, inplace=True)
+        accid_col = True    
+    elif "accID" in df.columns:
+        df.rename(columns={'accID': 'accid'}, inplace=True)
+        accid_col = True
+    elif "accid" in df.columns:
+        df.rename(columns={'accid': 'accid'}, inplace=True)
+        accid_col = True
+    
+
+    
+    if taxid_col is False and accid_col is False:
+        raise ValueError("The classification output file must contain a taxonomic ID column [taxid, taxID or taxon] or an accession column [assembly_accession, accession, accID or accid].")
+
+    def check_assembly_exists(row, taxid_col= False, accid_col=False):
         """
         Check if the assembly for the given taxid exists.
         """
-        taxid = str(int(row[taxid_col]))
+        taxid = None
+        accid = None
 
-        reference_data = query_sequence_databases(taxid)
+        if taxid_col:
+            taxid = str(int(row["taxid"]))
+        if accid_col:
+            accid = str(row["accid"])
+
+        passport = Passport(taxid = taxid, accession = accid)
+        print(f"Processing passport: {passport}")
+
+        reference_data = query_sequence_databases(passport)
+
+        print("retrieved reference data:", reference_data)
 
         row['assembly_accession'] = reference_data.accession
         row['description'] = reference_data.description
@@ -256,8 +294,8 @@ def check_assemblies_exist(args):
         row['assembly_id'] = reference_data.assembly_id
 
         return row
-        
-    df = df.apply(lambda row: check_assembly_exists(row, taxid_col), axis=1)
+
+    df = df.apply(lambda row: check_assembly_exists(row, taxid_col=taxid_col, accid_col=accid_col), axis=1)
     df.to_csv(args.assessment, index=False, sep='\t')
 
 def main():
