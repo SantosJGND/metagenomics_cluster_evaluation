@@ -26,6 +26,8 @@ workflow {
 
     reads_ch = reads_ch.collect()
 
+    processed_reads_ch = QCReadsPrinseqPaired(input_table_ch, reads_ch)
+
 
     // Extract reference sequences from the classification results
     reference_sequences_ch = ExtractReferenceSequences(input_table_ch)
@@ -34,7 +36,7 @@ workflow {
     flattened_reference_sequences_ch = reference_sequences_ch.reference_sequences.flatMap { ref_list ->
         ref_list
     }
-    combined_ch = reads_ch.combine(flattened_reference_sequences_ch)
+    combined_ch = processed_reads_ch.combine(flattened_reference_sequences_ch)
 
     // add input table basename to combined_ch tuple
     combined_ch = input_table_ch.combine(combined_ch)
@@ -71,6 +73,30 @@ workflow {
         reference_sequences_ch.matched_assemblies,
         merged_coverage_ch.merged_coverage_statistics,
     )
+}
+
+
+/*
+* Quality control of the reads using prinseq++
+*/
+process QCReadsPrinseqPaired {
+    publishDir "${params.output_dir}/qc_prinseq_reads", mode: 'symlink'
+    debug true
+
+    input:
+    path input_table
+    tuple path(fastq1), path(fastq2)
+
+    output:
+    tuple path("${input_table.baseName}_good_R1.fastq.gz"), path("${input_table.baseName}_good_R2.fastq.gz")
+
+    script:
+    """
+    prinseq++ ${params.prinseq_params} -fastq ${fastq1} -fastq2 ${fastq2} -out_good ${input_table.baseName}_good_R1.fastq -out_bad ${input_table.baseName}_bad_R1.fastq \
+    -out_good2 ${input_table.baseName}_good_R2.fastq -out_bad2 ${input_table.baseName}_bad_R2.fastq
+    bgzip ${input_table.baseName}_good_R1.fastq && bgzip ${input_table.baseName}_good_R2.fastq
+    bgzip ${input_table.baseName}_bad_R1.fastq && bgzip ${input_table.baseName}_bad_R2.fastq
+    """
 }
 
 /*
@@ -275,6 +301,9 @@ process MatchCladeReportWithReferenceSequences {
     
     def find_assembly_coverage(row):
         accession = row['assembly_accession']
+        if accession is None or pd.isna(accession):
+            row['coverage'] = 0
+            return row
         match = coverage_report[coverage_report['file'].str.contains(accession, na=False)]
         if match.empty:
             row['coverage'] = 0
@@ -282,17 +311,7 @@ process MatchCladeReportWithReferenceSequences {
             row['coverage'] = match['coverage'].values[0]
         
         return row
-    
-    def find_assembly_classification(row):
-        taxid = row['taxid']
-        match = merged_classification_results[merged_classification_results['taxid'] == taxid]
-        if match.empty:
-            row['classifier'] = 'unclassified'
-        else:
-            row['classifier'] = match['classification'].values[0]
-        
-        return row
-    
+
     clade_report_with_references = matched_assemblies.apply(find_assembly_mapping, axis=1)
     clade_report_with_references = clade_report_with_references.apply(find_assembly_coverage, axis=1)
     clade_report_with_references = clade_report_with_references[['description', 'taxid', 'assembly_accession', \
