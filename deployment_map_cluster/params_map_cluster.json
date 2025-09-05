@@ -14,6 +14,7 @@
     "msamtools_params": "-l 80 -p 95 -z 80",
     "msamtools_conda_env": "envs/msamtools",
     "references_extract_script": "reference_management/main.py",
+    "minimap2_conda_env": "envs/minimap2",
     "mess_conda_env": "envs/mess",
     "mosdepth_conda_env": "envs/mosdepth",
     "map_to_matrix_bin": "clustering/mapping_to_matrix",

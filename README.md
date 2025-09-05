@@ -35,6 +35,7 @@ This environment must be activated before running the nextflow workflow.
 
   - `pandas`
   - `numpy`
+  - `dotenv`
   - `Biopython`
 
 - Metagenomic classifiers:
@@ -69,6 +70,7 @@ to first ensure that the references will be available, or if the references to b
 
 For this, run the `check`submodule of the `references_management/main.py` script on the prospective taxid table:
 flow, simulating re
+
 ```bash
 python references_management/main.py check --input_table path/to/taxid_table.tsv --assessment /path/to/assessment.tsv
 ```

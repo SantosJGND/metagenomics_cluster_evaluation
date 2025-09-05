@@ -44,14 +44,12 @@ workflow {
         def query_id = file.baseName
         tuple(query_id, fastq1, fastq2, reference)
     }
-    combined_ch.subscribe { file ->
-        println("Found combined file: ${file}")
-    }
+
     mapped_reads_ch = MapMinimap2Paired(combined_ch, params.minimap2_illumina_params)
 
     // Extract mapping statistics from BAM files
     filtered_alignments_ch = FilterBamMsamtools(mapped_reads_ch)
-    sorted_reads_ch = sortBam(filtered_alignments_ch)
+    sorted_reads_ch = SortBam(filtered_alignments_ch)
     coverage_ch = SamtoolsCoverage(sorted_reads_ch)
 
     // collect all mapping files, provide directory for clustering
@@ -186,7 +184,7 @@ process SamtoolsCoverage {
 /*
 * sort and index bam file, maintain tuple file, query_id, reference_id in channel
 */
-process sortBam {
+process SortBam {
     tag "sortMapping"
     publishDir "${params.output_dir}/${query_id}/sorted_reads", mode: 'symlink'
 
@@ -258,6 +256,11 @@ process MatchCladeReportWithReferenceSequences {
 
     def find_assembly_mapping(row):
         accession = row['assembly_accession']
+        if accession is None or pd.isna(accession):
+            row['clade'] = 'unmapped'
+            row['nuniq'] = 0
+            row['freq'] = 0
+            return row
         match = clade_report[clade_report['files'].str.contains(accession, na=False)]
         if match.empty:
             row['clade'] = 'unmapped'

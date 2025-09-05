@@ -246,6 +246,11 @@ process MatchCladeReportWithReferenceSequences {
 
     def find_assembly_mapping(row):
         accession = row['assembly_accession']
+        if accession is None or pd.isna(accession):
+            row['clade'] = 'unmapped'
+            row['nuniq'] = 0
+            row['freq'] = 0
+            return row
         match = clade_report[clade_report['files'].str.contains(accession, na=False)]
         if match.empty:
             row['clade'] = 'unmapped'

@@ -1,4 +1,5 @@
 # You need to install Biopython: pip install biopython
+import logging
 from Bio import Entrez
 import os
 import subprocess
@@ -15,7 +16,7 @@ if Entrez.email is None:
 
 @dataclass
 class Passport:
-    taxid: str
+    taxid: Optional[str]
     accession: Optional[str]
 
 
@@ -29,8 +30,6 @@ class Passport:
             return f"{self.taxid}_{self.accession}"
         else:
             return f"{self.taxid}"
-
-
 
 
 @dataclass
@@ -100,7 +99,6 @@ def get_reference_sequence_url(taxid) -> Tuple[Optional[str], Optional[str], Opt
 
         # Get the first sequence ID
         sequence_id = record['IdList'][0]
-        print(f"Found sequence ID: {sequence_id} for taxid {taxid}")
 
         # Fetch the summary for the sequence
         handle = Entrez.esummary(db="nucleotide", id=sequence_id)
@@ -135,7 +133,7 @@ def get_representative_assembly(taxid) -> Tuple[Optional[str], Optional[str], Op
             raise ValueError(f"No representative genomes found for taxid {taxid}")
         # Get summary for the first assembly (could filter for 'representative genome' here)
         assembly_id = record['IdList'][0]
-        print(f"Found assembly ID: {assembly_id} for taxid {taxid}")
+
         handle = Entrez.esummary(db="assembly", id=assembly_id, report="full")
         summary = Entrez.read(handle)
         handle.close()
@@ -152,7 +150,7 @@ def get_representative_assembly(taxid) -> Tuple[Optional[str], Optional[str], Op
         return None, None, None
 
 
-def retrieve_reference_sequence(nucleotide_id, output_path, gzipped=True):
+def retrieve_reference_sequence(nucleotide_id, output_path, gzipped=True) -> bool:
     """
     Download the reference sequence file given a nucleotide ID.
     """
@@ -173,7 +171,7 @@ def retrieve_reference_sequence(nucleotide_id, output_path, gzipped=True):
         return False
 
 
-def retrieve_assembly_sequence(assembly_id, output_path):
+def retrieve_assembly_sequence(assembly_id, output_path) -> bool:
     """
     Download the assembly sequence file given an assembly ID.
     """
@@ -198,62 +196,75 @@ def retrieve_assembly_sequence(assembly_id, output_path):
         print(f"An error occurred while downloading assembly: {e}")
         return False
 
-def query_sequence_databases(passport:Passport) -> ReferenceData:
-    """
-    use both strategies above
-    """
 
-    if passport.accession is not None:
 
-        accession, description, nucleotide_id = retrieve_reference_sequence_id(passport.accession)
-        if nucleotide_id is not None:
+class NCBITools:
+    def __init__(self):
+        self.logger = logging.getLogger('NCBITools')
+        self.logger.setLevel(logging.DEBUG)
+        ch = logging.StreamHandler()
+        ch.setLevel(logging.DEBUG)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        ch.setFormatter(formatter)
+        self.logger.addHandler(ch)
+        self.logger.propagate = False
+
+    def query_sequence_databases(self, passport:Passport) -> ReferenceData:
+        """
+        use both strategies above
+        """
+
+        if passport.accession is not None:
+
+            accession, description, nucleotide_id = retrieve_reference_sequence_id(passport.accession)
+            if nucleotide_id is not None:
+                
+                return ReferenceData(
+                    taxid=passport.taxid,
+                    accession=passport.accession,
+                    description=description,
+                    nucleotide_id=nucleotide_id
+                )
+            else:
+                self.logger.warning(f"No nucleotide ID found for accession {passport.accession}, falling back to taxid search.")
             
+
+        accession, description, nucleotide_id = get_reference_sequence_url(passport.taxid)
+
+        if accession is not None and nucleotide_id is not None:
             return ReferenceData(
                 taxid=passport.taxid,
-                accession=passport.accession,
+                accession=accession,
                 description=description,
                 nucleotide_id=nucleotide_id
             )
-        else:
-            print(f"No nucleotide ID found for accession {passport.accession}, falling back to taxid search.")
         
-
-    accession, description, nucleotide_id = get_reference_sequence_url(passport.taxid)
-
-    if accession is not None and nucleotide_id is not None:
+        accession, description, assembly_id = get_representative_assembly(passport.taxid)
+        
         return ReferenceData(
             taxid=passport.taxid,
             accession=accession,
             description=description,
-            nucleotide_id=nucleotide_id
+            assembly_id=assembly_id
         )
-    
-    accession, description, assembly_id = get_representative_assembly(passport.taxid)
-    
-    return ReferenceData(
-        taxid=passport.taxid,
-        accession=accession,
-        description=description,
-        assembly_id=assembly_id
-    )
 
 
-def retrieve_sequence_databases(reference_data:ReferenceData, output_path:str, gzipped=True):
-    """
-    use both strategies above
-    """
+    def retrieve_sequence_databases(self, reference_data:ReferenceData, output_path:str, gzipped=True) -> bool:
+        """
+        use both strategies above
+        """
 
-    if reference_data.nucleotide_id is not None:
-        success = retrieve_reference_sequence(reference_data.nucleotide_id, output_path, gzipped)
-        if not success:
-            print(f"Failed to retrieve reference sequence for taxid {reference_data.taxid}")
-        return success, output_path
-    
-    if reference_data.assembly_id is not None:
-        success = retrieve_assembly_sequence(reference_data.assembly_id, output_path)
-        if not success:
-            print(f"Failed to retrieve assembly sequence for taxid {reference_data.taxid}")
-        return success, output_path
-    
-    print(f"No sequence data found for taxid {reference_data.taxid}")
-    return False
+        if reference_data.nucleotide_id is not None:
+            success = retrieve_reference_sequence(reference_data.nucleotide_id, output_path, gzipped)
+            if not success:
+                self.logger.warning(f"Failed to retrieve reference sequence for taxid {reference_data.taxid}")
+            return success
+        
+        if reference_data.assembly_id is not None:
+            success = retrieve_assembly_sequence(reference_data.assembly_id, output_path)
+            if not success:
+                self.logger.warning(f"Failed to retrieve assembly sequence for taxid {reference_data.taxid}")
+            return success
+
+        self.logger.warning(f"No sequence data found for taxid {reference_data.taxid}")
+        return False
