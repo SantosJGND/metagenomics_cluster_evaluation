@@ -388,9 +388,9 @@ process ClusterMappedReads {
     tuple val(query_id), path(mapped_reads)
 
     output:
-    path "clustering/clade_report.txt", emit: clade_report
-    path "clustering/sample_report.txt", emit: sample_report
-    path "clustering/distance_matrix.txt", emit: distance_matrix
+    path "clustering/clade_report.tsv", emit: clade_report
+    path "clustering/sample_report.tsv", emit: sample_report
+    path "clustering/distance_matrix.tsv", emit: distance_matrix
 
     script:
     def mapped_reads_string = mapped_reads.collect { it[0] }.join(',')
