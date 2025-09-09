@@ -255,7 +255,7 @@ process FilterBamMsamtools {
 */
 process MatchCladeReportWithReferenceSequences {
     tag "MatchCladeReportWithReferenceSequences ${input_table.baseName}"
-    publishDir "${params.output_dir}/${input_table.baseName}/clustering", mode: 'symlink'
+    publishDir "${params.output_dir}/${input_table.baseName}/output", mode: 'copy'
 
     input:
     path input_table
@@ -265,6 +265,9 @@ process MatchCladeReportWithReferenceSequences {
 
     output:
     path "clade_report_with_references.tsv", emit: clade_report_with_references
+    path clade_report
+    path matched_assemblies
+    path coverage_report
 
     script:
     """
@@ -298,7 +301,7 @@ process MatchCladeReportWithReferenceSequences {
             row['freq'] = match['freq'].values[0]
         
         return row
-    
+
     def find_assembly_coverage(row):
         accession = row['assembly_accession']
         if accession is None or pd.isna(accession):
