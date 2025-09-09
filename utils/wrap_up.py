@@ -18,7 +18,7 @@ def main():
     matched_assemblies = f"{args.output_dir}/{args.matched_assemblies}"
     coverage_report = f"{args.output_dir}/{args.coverage_report}"
 
-    clade_report = pd.read_csv(clade_report, sep="\t", header=None, names=["clade", "nuniq", "freq", "files"])
+    clade_report = pd.read_csv(clade_report, sep="\t", header=None, names=["clade", "nuniq", "freq", "min_pair_dist", "nfiles", "files"])
     clade_report['files'] = clade_report['files'].str.split(',')
     clade_report = clade_report.explode('files')
 
@@ -33,16 +33,22 @@ def main():
             row['clade'] = 'unmapped'
             row['nuniq'] = 0
             row['freq'] = 0
+            row['min_pair_dist'] = 0
+            row['nfiles'] = 0
             return row
         match = clade_report[clade_report['files'].str.contains(accession, na=False)]
         if match.empty:
             row['clade'] = 'unmapped'
             row['nuniq'] = 0
             row['freq'] = 0
+            row['min_pair_dist'] = 0
+            row['nfiles'] = 0
         else:
             row['clade'] = match['clade'].values[0]
             row['nuniq'] = match['nuniq'].values[0]
             row['freq'] = match['freq'].values[0]
+            row['min_pair_dist'] = match['min_pair_dist'].values[0]
+            row['nfiles'] = match['nfiles'].values[0]
         
         return row
 
@@ -62,7 +68,7 @@ def main():
     clade_report_with_references = matched_assemblies.apply(find_assembly_mapping, axis=1)
     clade_report_with_references = clade_report_with_references.apply(find_assembly_coverage, axis=1)
     clade_report_with_references = clade_report_with_references[['description', 'taxid', 'assembly_accession', \
-            'coverage', 'clade', 'nuniq', 'freq']]
+            'coverage', 'clade', 'nuniq', 'freq', 'min_pair_dist', 'nfiles']]
 
     clade_report_with_references.to_csv(f"{args.output_dir}/clade_report_with_references.tsv", sep="\t", index=False)
 
