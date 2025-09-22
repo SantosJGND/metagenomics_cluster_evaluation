@@ -102,8 +102,6 @@ def check_assemblies_exist(args):
         df.rename(columns={'accid': 'accid'}, inplace=True)
         accid_col = True
     
-
-    
     if taxid_col is False and accid_col is False:
         raise ValueError("The classification output file must contain a taxonomic ID column [taxid, taxID or taxon] or an accession column [assembly_accession, accession, accID or accid].")
 
@@ -120,16 +118,14 @@ def check_assemblies_exist(args):
             accid = str(row["accid"])
 
         passport = Passport(taxid = taxid, accession = accid)
-        print(f"Processing passport: {passport}")
         ncbi_tools = NCBITools()
         reference_data = ncbi_tools.query_sequence_databases(passport)
-
-        print("retrieved reference data:", reference_data)
 
         row['assembly_accession'] = reference_data.accession
         row['description'] = reference_data.description
         row['nucleotide_id'] = reference_data.nucleotide_id
         row['assembly_id'] = reference_data.assembly_id
+        row['lineage'] = reference_data.lineage
 
         return row
 

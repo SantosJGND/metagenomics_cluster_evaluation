@@ -57,30 +57,23 @@ class AssemblyStore:
         return os.path.join(self.store_path, taxid)
 
 
-    def retrieve_local_assembly(self, taxid) -> Optional[LocalAssembly]:
+    def retrieve_local_assembly(self, passport: Passport) -> Optional[LocalAssembly]:
         """
         Check if the assembly for the given taxid exists in the assembly store.
         """
-        taxid_subdir = f"{self.store_path}/{taxid}"
-        if os.path.exists(taxid_subdir) is False:
-            self.logger.warning(f"No assembly directory found for taxid {taxid}")
-            return None
-        taxid_files = os.listdir(taxid_subdir)
-        if not taxid_files:
-            self.logger.warning(f"No files found in assembly directory for taxid {taxid}")
-            return None
-        
+        taxid_subdir = f"{self.store_path}/{passport.taxid}"
+
         # Assuming the first file is the assembly file
-        assembly_file = [x for x in taxid_files if x.endswith('.gz')]
+        assembly_file = os.path.join(taxid_subdir, f"{passport.prefix}_sequence.fasta.gz")
+        print(passport.prefix)
+        print(f"Checking for local assembly at {assembly_file}")
 
-        if not assembly_file:
-            self.logger.warning(f"No assembly file found for taxid {taxid}")
+        if not os.path.exists(assembly_file):
+            self.logger.warning(f"No assembly file found for taxid {passport.taxid} and accession {passport.accession}")
             return None
+        accid = passport.accession
 
-        accid = "_".join(taxid_files[0].split('_')[:2]) if assembly_file else None
-
-        return LocalAssembly(taxid=taxid, accession=accid, file_path=os.path.join(taxid_subdir, assembly_file[0])) if assembly_file else None
-
+        return LocalAssembly(taxid=passport.taxid, accession=accid, file_path=assembly_file) if assembly_file else None
 
 
     def retrieve_assembly(self, passport: Passport) -> Optional[LocalAssembly]:
@@ -88,7 +81,10 @@ class AssemblyStore:
         Retrieve the assembly for the given taxid, either from local storage or NCBI.
         """
         # First, check if the assembly is available locally
-        local_assembly = self.retrieve_local_assembly(passport.taxid)
+        local_assembly = self.retrieve_local_assembly(passport)
+
+        print("### local assembly ###")
+        print("local_assembly", local_assembly)
         if local_assembly:
             self.logger.info(f"Using local assembly for taxid {passport.taxid}: {local_assembly.file_path}")
             return local_assembly
@@ -97,12 +93,11 @@ class AssemblyStore:
         self.logger.info(f"Fetching assembly for taxid {passport.taxid} from NCBI...")
 
         reference_data = self.ncbi.query_sequence_databases(passport)
-        assembly_dir = os.path.join(self.store_path, passport.prefix)
+        assembly_dir = os.path.join(self.store_path, str(passport.taxid))
         os.makedirs(assembly_dir, exist_ok=True)
-        
-        assembly_file_path = os.path.join(assembly_dir, f"{passport.prefix}_sequence.fasta.gz")
-        success_dl = self.ncbi.retrieve_sequence_databases(reference_data, assembly_file_path, gzipped=True)
 
+        assembly_file_path = os.path.join(assembly_dir, f"{reference_data.prefix}_sequence.fasta.gz")
+        success_dl = self.ncbi.retrieve_sequence_databases(reference_data, assembly_file_path, gzipped=True)
 
         if not success_dl:
             self.logger.error(f"Failed to download assembly for passport {passport.taxid}")
@@ -121,24 +116,47 @@ class AssemblyStore:
             raise FileNotFoundError(f"Classification output file not found: {classification_output_path}")
 
         df = pd.read_csv(classification_output_path, sep='\t')
-        taxid_col = None
+        taxid_col = False
         if 'taxid' in df.columns:
-            taxid_col = 'taxid'
+            df.rename(columns={'taxid': 'taxid'}, inplace=True)
+            taxid_col = True
         elif 'TaxID' in df.columns:
-            taxid_col = 'TaxID'
+            df.rename(columns={'TaxID': 'taxid'}, inplace=True)
+            taxid_col = True
         elif 'taxon' in df.columns:
-            taxid_col = 'taxon'
-        else:
+            df.rename(columns={'taxon': 'taxid'}, inplace=True)
+            taxid_col = True
+        if taxid_col is False:
             raise ValueError("The classification output file must contain a taxonomic ID column [taxid, taxID or taxon].")
 
-        df['assembly_accession'] = None
-        df['assembly_file'] = None
+        accid_col = False
+        if 'assembly_accession' in df.columns:
+            df.rename(columns={'assembly_accession': 'accid'}, inplace=True)
+            accid_col = True
+        elif "accession" in df.columns:
+            df.rename(columns={'accession': 'accid'}, inplace=True)
+            accid_col = True    
+        elif "accID" in df.columns:
+            df.rename(columns={'accID': 'accid'}, inplace=True)
+            accid_col = True
+        elif "accid" in df.columns:
+            df.rename(columns={'accid': 'accid'}, inplace=True)
+            accid_col = True
+
+
+        if taxid_col is False and accid_col is False:
+            raise ValueError("The classification output file must contain a taxonomic ID column [taxid, taxID or taxon] or an accession column [assembly_accession, accession, accID or accid].")
 
         for index, row in df.iterrows():
-            taxid = str(int(row[taxid_col]))
+            taxid = str(int(row['taxid'])) if taxid_col == True else None
+            accession = str(row['accid']) if accid_col == True else None
+            if taxid is None and accession is None:
+                self.logger.warning(f"Skipping row {index} due to missing taxid and accession.")
+                continue
             self.logger.info(f"Processing taxid {taxid}...")
-            passport = Passport(taxid = taxid, accession = None)
+            passport = Passport(taxid = taxid, accession = accession)
             local_assembly = self.retrieve_assembly(passport)
+
             if local_assembly:
                 df.at[index, 'assembly_accession'] = local_assembly.accession
                 df.at[index, 'assembly_file'] = local_assembly.file_path
@@ -161,12 +179,16 @@ class AssemblyStore:
         for _, row in classification_output_path.iterrows():
             accession = row['assembly_accession']
             assembly_file = row['assembly_file']
-            
+
             if pd.isna(accession) or pd.isna(assembly_file):
                 self.logger.warning(f"Skipping taxid {row['taxid']} due to missing assembly data.")
                 continue
             
-            dest_path = os.path.join(mapping_references_dir, f"{accession}.fna.gz")
+            dest_filename = f"{accession}.fna.gz"
+            if "taxid" in row and not pd.isna(row["taxid"]):
+                dest_filename = f"{row['taxid']}_{dest_filename}"
+            dest_path = os.path.join(mapping_references_dir, dest_filename)
+            
             if not os.path.exists(dest_path):
                 self.logger.info(f"Copying {assembly_file} to {dest_path}")
                 os.system(f"cp {assembly_file} {dest_path}")

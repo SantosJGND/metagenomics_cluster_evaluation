@@ -35,6 +35,7 @@ def main():
             row['freq'] = 0
             row['min_pair_dist'] = 0
             row['nfiles'] = 0
+            row['files'] = []
             return row
         match = clade_report[clade_report['files'].str.contains(accession, na=False)]
         if match.empty:
@@ -43,13 +44,15 @@ def main():
             row['freq'] = 0
             row['min_pair_dist'] = 0
             row['nfiles'] = 0
+            row['files'] = []
         else:
             row['clade'] = match['clade'].values[0]
             row['nuniq'] = match['nuniq'].values[0]
             row['freq'] = match['freq'].values[0]
             row['min_pair_dist'] = match['min_pair_dist'].values[0]
             row['nfiles'] = match['nfiles'].values[0]
-        
+            row['files'] = match['files'].values[0]
+
         return row
 
     def find_assembly_coverage(row):
@@ -68,7 +71,7 @@ def main():
     clade_report_with_references = matched_assemblies.apply(find_assembly_mapping, axis=1)
     clade_report_with_references = clade_report_with_references.apply(find_assembly_coverage, axis=1)
     clade_report_with_references = clade_report_with_references[['description', 'taxid', 'assembly_accession', \
-            'coverage', 'clade', 'nuniq', 'freq', 'min_pair_dist', 'nfiles']]
+            'coverage', 'clade', 'nuniq', 'freq', 'min_pair_dist', 'nfiles', 'files']]
 
     clade_report_with_references.to_csv(f"{args.output_dir}/clade_report_with_references.tsv", sep="\t", index=False)
 

@@ -1,6 +1,7 @@
 .env
 *.venv
 test_run/
+study/
 Miniforge3.sh
 *.pyc
 __pycache__/

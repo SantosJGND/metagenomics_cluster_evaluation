@@ -1,62 +1,48 @@
 params.input_table = params.input_table ?: ""
-params.reads = params.reads ?: ""
 
 workflow {
-
-    if (params.reads == "") {
-        error("Reads directory path is not provided. Please set the 'reads' parameter.")
-    }
 
     if (params.input_table == "") {
         error("Input table path is not provided. Please set the 'input_table' parameter.")
     }
-
-
     input_table_ch = Channel.fromPath(params.input_table)
         .ifEmpty { error("Cannot find the input table: ${params.input_table}") }
 
+    // Get reference sequences for each taxonomic ID in the input table
+    matched_table_ch = ExtractFastaSequences(input_table_ch)
+    input_table_ch = FormatToMess(input_table_ch, matched_table_ch.input_table_with_sequences)
 
-
-    Channel.fromPath(["${params.reads}/*_R1.fq.gz", "${params.reads}/*_R2.fq.gz"])
-        .map { file -> tuple(file) }
-        .ifEmpty { error('Cannot find any paired-end fastq files') }
-        .set { reads_ch }
-
-
-
-    reads_ch = reads_ch.collect()
-
-    processed_reads_ch = QCReadsPrinseqPaired(input_table_ch, reads_ch)
-
+    // Simulate reads based on the input table
+    reads_ch = WgsimSimulateReads(params.technology, input_table_ch).map { table_id, fastq_files ->
+        // Unpack the list of FASTQ files into separate variables
+        def (fastq1, fastq2) = fastq_files
+        tuple(table_id, fastq1, fastq2)
+    }
+    // Process reads using classifiers
+    centrifuge_classification_ch = CentrifugeClassificationPaired(input_table_ch, reads_ch)
+    kraken2_classification_ch = Kraken2ClassificationPaired(input_table_ch, reads_ch)
+    merge_classification_results_ch = MergeClassificationResults(centrifuge_classification_ch, kraken2_classification_ch)
 
     // Extract reference sequences from the classification results
-    reference_sequences_ch = ExtractReferenceSequences(input_table_ch)
+    reference_sequences_ch = ExtractReferenceSequences(input_table_ch, merge_classification_results_ch)
 
     // Map reads to reference sequences using minimap2
     flattened_reference_sequences_ch = reference_sequences_ch.reference_sequences.flatMap { ref_list ->
         ref_list
     }
-    combined_ch = processed_reads_ch.combine(flattened_reference_sequences_ch)
-
-    // add input table basename to combined_ch tuple
-    combined_ch = input_table_ch.combine(combined_ch)
-
-
-    combined_ch = combined_ch.map { file, fastq1, fastq2, reference ->
-        def query_id = file.baseName
-        tuple(query_id, fastq1, fastq2, reference)
-    }
+    combined_ch = reads_ch.combine(flattened_reference_sequences_ch)
 
     mapped_reads_ch = MapMinimap2Paired(combined_ch, params.minimap2_illumina_params)
 
     // Extract mapping statistics from BAM files
     filtered_alignments_ch = FilterBamMsamtools(mapped_reads_ch)
-    sorted_reads_ch = SortBam(filtered_alignments_ch)
+    sorted_reads_ch = sortBam(filtered_alignments_ch)
     coverage_ch = SamtoolsCoverage(sorted_reads_ch)
 
     // collect all mapping files, provide directory for clustering
-    coverage_ch = coverage_ch.map { file, _filename, _refname, group -> tuple(group, file) }
+    coverage_ch = coverage_ch.map { file1, file2, _filename, _refname, group -> tuple(group, file1, file2) }
     coverage_ch = coverage_ch.groupTuple()
+
     // collect all mapping files, provide directory for clustering
     mapping_files_info = mapped_reads_ch.map { file, group, _refname -> tuple(group, file) }
     mapping_files_info = mapping_files_info.groupTuple()
@@ -72,39 +58,41 @@ workflow {
         clustering_ch.clade_report,
         reference_sequences_ch.matched_assemblies,
         merged_coverage_ch.merged_coverage_statistics,
+        merge_classification_results_ch,
     )
 }
+
 
 
 /*
 * Quality control of the reads using prinseq++
 */
 process QCReadsPrinseqPaired {
-    publishDir "${params.output_dir}/qc_prinseq_reads", mode: 'symlink'
     debug true
 
     input:
     path input_table
-    tuple path(fastq1), path(fastq2)
+    tuple val(query_id), path(fastq1), path(fastq2)
 
     output:
     tuple path("${input_table.baseName}_good_R1.fastq.gz"), path("${input_table.baseName}_good_R2.fastq.gz")
 
     script:
     """
-    prinseq++ ${params.prinseq_params} -fastq ${fastq1} -fastq2 ${fastq2} -out_good ${input_table.baseName}_good_R1.fastq -out_bad ${input_table.baseName}_bad_R1.fastq \
-    -out_good2 ${input_table.baseName}_good_R2.fastq -out_bad2 ${input_table.baseName}_bad_R2.fastq
-    bgzip ${input_table.baseName}_good_R1.fastq && bgzip ${input_table.baseName}_good_R2.fastq
-    bgzip ${input_table.baseName}_bad_R1.fastq && bgzip ${input_table.baseName}_bad_R2.fastq
+    prinseq++ ${params.prinseq_params} -fastq ${fastq1} -fastq2 ${fastq2} -out_good ${query_id}_good_R1.fastq -out_bad ${query_id}_bad_R1.fastq \
+    -out_good2 ${query_id}_good_R2.fastq -out_bad2 ${query_id}_bad_R2.fastq
+    bgzip ${query_id}_good_R1.fastq && bgzip ${query_id}_good_R2.fastq
+    bgzip ${query_id}_bad_R1.fastq && bgzip ${query_id}_bad_R2.fastq
     """
 }
+
 
 /*
 * Match FormatSequences file to mess input table
 */
 process FormatToMess {
     tag "FormatToMess ${input_table.baseName}"
-    publishDir "${params.output_dir}/${input_table.baseName}/input", mode: 'symlink'
+    publishDir "${params.output_dir}/${input_table.baseName}/input", mode: 'copy'
 
     input:
     path input_table
@@ -133,7 +121,6 @@ process FormatToMess {
 */
 process ExtractFastaSequences {
     tag "ExtractFastaSequences ${input_table.baseName}"
-    publishDir "${params.output_dir}/${input_table.baseName}/input", mode: 'symlink'
 
     input:
     path input_table
@@ -156,16 +143,15 @@ process ExtractFastaSequences {
 process MergeCoverageStatistics {
     tag "MergeCoverageStatistics ${query_id}"
 
-    publishDir "${params.output_dir}/${query_id}/coverage", mode: 'symlink'
-
     input:
-    tuple val(query_id), path(coverage_files)
+    tuple val(query_id), path(stats_files), path(coverage_files)
 
     output:
     path "merged_coverage_statistics.tsv", emit: merged_coverage_statistics
 
     script:
     def coverage_files_string = coverage_files.collect { it[0] }.join(',')
+    def stats_files_string = stats_files.collect { it[0] }.join(',')
     """
     #!/usr/bin/env python3
     import pandas as pd
@@ -173,15 +159,38 @@ process MergeCoverageStatistics {
     
     
     cov_files = "${coverage_files_string}".split(',')
+    stats_files = "${stats_files_string}".split(',')
     coverage_data = []
-    for file in cov_files:
+    for ix, file in enumerate(cov_files):
+        stats_filename = stats_files[ix]
+        stats_df = pd.read_csv(stats_filename, sep="\\t", header=None, names=["stat", "value", "comment"])
         df = pd.read_csv(file, sep="\\t")
         df['file'] = file.split('/')[-1]
+        df['error_rate'] = stats_df.loc[stats_df['stat'] == 'error rate:', 'value'].values[0]
         coverage_data.append(df)
     merged_df = pd.concat(coverage_data, ignore_index=True)
+    
 
     merged_df.reset_index(inplace=True)
     merged_df.to_csv("merged_coverage_statistics.tsv", sep="\\t", index=False)
+    """
+}
+
+/*
+* Use samtools to extract BAM file statistics
+*/
+process SamtoolsStats {
+    tag "SamtoolsStats ${bamfile.baseName}"
+
+    input:
+    tuple path(bamfile), path(bamindex), val(query_id), val(reference_id)
+
+    output:
+    tuple path("${bamfile.baseName}.stats.txt"), val(bamfile.baseName), val(reference_id), val(query_id)
+
+    script:
+    """
+    samtools stats ${bamfile} > ${bamfile.baseName}.stats.txt
     """
 }
 
@@ -190,19 +199,20 @@ process MergeCoverageStatistics {
 * Use samtools to extract BAM file coverage statistics
 */
 process SamtoolsCoverage {
-    tag "SamtoolsCoverage ${bamfile.baseName}"
+    publishDir "${params.output_dir}/${query_id}/coverage", mode: 'copy'
 
-    publishDir "${params.output_dir}/${query_id}/coverage", mode: 'symlink'
+    tag "SamtoolsCoverage ${bamfile.baseName}"
 
     input:
     tuple path(bamfile), path(bamindex), val(query_id), val(reference_id)
 
     output:
-    tuple path("${bamfile.baseName}.coverage.txt"), val(bamfile.baseName), val(reference_id), val(query_id)
+    tuple path("${bamfile.baseName}.stats.txt"), path("${bamfile.baseName}.coverage.txt"), val(bamfile.baseName), val(reference_id), val(query_id)
 
     script:
     """
     samtools coverage -o ${bamfile.baseName}.coverage.txt ${bamfile}
+    samtools stats ${bamfile} | grep ^SN | cut -f 2- > ${bamfile.baseName}.stats.txt
     """
 }
 
@@ -210,9 +220,8 @@ process SamtoolsCoverage {
 /*
 * sort and index bam file, maintain tuple file, query_id, reference_id in channel
 */
-process SortBam {
+process sortBam {
     tag "sortMapping"
-    publishDir "${params.output_dir}/${query_id}/sorted_reads", mode: 'symlink'
 
     input:
     tuple path(bamfile), val(query_id), val(reference_id)
@@ -234,8 +243,6 @@ process SortBam {
 */
 process FilterBamMsamtools {
     tag "FilterBamMsamtools ${bamfile.baseName}"
-
-    publishDir "${params.output_dir}/${query_id}/filtered_reads", mode: 'symlink'
 
     input:
     tuple path(bamfile), val(query_id), val(reference_id)
@@ -262,6 +269,7 @@ process MatchCladeReportWithReferenceSequences {
     path clade_report
     path matched_assemblies
     path coverage_report
+    path merge_classification_results
 
     output:
     path "clade_report_with_references.tsv", emit: clade_report_with_references
@@ -273,7 +281,7 @@ process MatchCladeReportWithReferenceSequences {
     """
     #!/usr/bin/env python3
     import pandas as pd
-    clade_report = pd.read_csv("${clade_report}", sep="\\t", header=None, names=["clade", "nuniq", "freq", "files"])
+    clade_report = pd.read_csv("${clade_report}", sep="\\t", header=None,  names=["clade", "nuniq", "freq", "min_pair_dist", "nfiles", "files"])
     clade_report['clade']
     clade_report['files'] = clade_report['files'].str.split(',')
     clade_report = clade_report.explode('files')
@@ -282,6 +290,7 @@ process MatchCladeReportWithReferenceSequences {
     matched_assemblies['filename'] = matched_assemblies['assembly_file'].str.split('/').str[-1]
 
     coverage_report = pd.read_csv("${coverage_report}", sep="\\t")
+    merged_classification_results = pd.read_csv("${merge_classification_results}", sep="\\t")
 
     def find_assembly_mapping(row):
         accession = row['assembly_accession']
@@ -301,7 +310,7 @@ process MatchCladeReportWithReferenceSequences {
             row['freq'] = match['freq'].values[0]
         
         return row
-
+    
     def find_assembly_coverage(row):
         accession = row['assembly_accession']
         if accession is None or pd.isna(accession):
@@ -314,11 +323,22 @@ process MatchCladeReportWithReferenceSequences {
             row['coverage'] = match['coverage'].values[0]
         
         return row
-
+    
+    def find_assembly_classification(row):
+        taxid = row['taxid']
+        match = merged_classification_results[merged_classification_results['taxid'] == taxid]
+        if match.empty:
+            row['classifier'] = 'unclassified'
+        else:
+            row['classifier'] = match['classification'].values[0]
+        
+        return row
+    
     clade_report_with_references = matched_assemblies.apply(find_assembly_mapping, axis=1)
+    clade_report_with_references = clade_report_with_references.apply(find_assembly_classification, axis=1)
     clade_report_with_references = clade_report_with_references.apply(find_assembly_coverage, axis=1)
     clade_report_with_references = clade_report_with_references[['description', 'taxid', 'assembly_accession', \
-            'coverage', 'clade', 'nuniq', 'freq']]
+            'coverage', 'clade', 'nuniq', 'freq', 'classifier']]
 
     clade_report_with_references.to_csv("clade_report_with_references.tsv", sep="\\t", index=False)
     """
@@ -329,7 +349,6 @@ process MatchCladeReportWithReferenceSequences {
 */
 process MergeMappingStatistics {
     tag "MergeMappingStatistics ${input_table.baseName}"
-    publishDir "${params.output_dir}/${input_table.baseName}/mapping_stats", mode: 'symlink'
 
     input:
     val input_table
@@ -361,8 +380,6 @@ process MergeMappingStatistics {
 * Extract mapping statistics from BAM files
 */
 process ExtractMappingStatistics {
-    publishDir "${params.output_dir}/${query_id}/mapping_stats", mode: 'symlink'
-
     input:
     tuple path(bam_file), val(query_id), val(reference_name)
 
@@ -380,8 +397,7 @@ process ExtractMappingStatistics {
 */
 process ClusterMappedReads {
     tag "ClusterMappedReads ${input_table.baseName}"
-
-    publishDir "${params.output_dir}/${input_table.baseName}", mode: 'symlink'
+    publishDir "${params.output_dir}/${input_table.baseName}", mode: 'copy'
 
     input:
     path input_table
@@ -391,6 +407,8 @@ process ClusterMappedReads {
     path "clustering/clade_report.tsv", emit: clade_report
     path "clustering/sample_report.tsv", emit: sample_report
     path "clustering/distance_matrix.tsv", emit: distance_matrix
+    path "clustering/all_node_statistics.tsv", emit: all_node_statistics
+    path "clustering/nj_tree_edges.txt", emit: nj_tree_edges
 
     script:
     def mapped_reads_string = mapped_reads.collect { it[0] }.join(',')
@@ -408,8 +426,6 @@ process ClusterMappedReads {
 */
 process MapMinimap2Paired {
     tag "MapMinimap2Paired ${fastq1} ${fastq2} ${reference.baseName}"
-
-    publishDir "${params.output_dir}/${query_id}/mapped_reads", mode: 'symlink'
 
     input:
     tuple val(query_id), path(fastq1), path(fastq2), path(reference)
@@ -431,10 +447,9 @@ process MapMinimap2Paired {
 process ExtractReferenceSequences {
     tag "ExtractReferenceSequences ${input_table.baseName}"
 
-    publishDir "${params.output_dir}/${input_table.baseName}", mode: 'symlink'
-
     input:
     path input_table
+    path classifier_output
 
     output:
     path "reference_sequences/*gz", emit: reference_sequences
@@ -443,7 +458,7 @@ process ExtractReferenceSequences {
     script:
     """
     ${params.python_bin} ${params.references_extract_script} retrieve \
-    --input_table ${input_table} \
+    --input_table ${classifier_output} \
     --assembly_store "${params.assembly_store}" \
     --mapping_references_dir "reference_sequences" 
     """
@@ -455,7 +470,7 @@ process ExtractReferenceSequences {
 */
 process MergeClassificationResults {
     tag "MergeClassificationResults ${query_id}"
-    publishDir "${params.output_dir}/${query_id}/classification", mode: 'symlink'
+    publishDir "${params.output_dir}/${query_id}/classification", mode: 'copy'
 
     input:
     path centrifuge_output
@@ -503,7 +518,7 @@ process MergeClassificationResults {
 process ProcessClassifierOutput {
     tag "ProcessClassifierOutput ${query_id}"
 
-    publishDir "${params.output_dir}/${query_id}/classification/${classifier_type}", mode: 'symlink'
+    publishDir "${params.output_dir}/${query_id}/classification/${classifier_type}", mode: 'copy'
 
     input:
     path classifier_output
@@ -528,7 +543,7 @@ process ProcessClassifierOutput {
 */
 process Kraken2ClassificationPaired {
     tag "Kraken2Classification ${input_table.baseName}"
-    publishDir "${params.output_dir}/${input_table.baseName}/classification/kraken2", mode: 'symlink'
+    publishDir "${params.output_dir}/${input_table.baseName}/classification/kraken2", mode: 'copy'
 
     input:
     path input_table
@@ -543,7 +558,6 @@ process Kraken2ClassificationPaired {
     """
     ${params.kraken2_bin} --db ${params.kraken2_index} \
     --report ${input_table.baseName}_kraken2_report.txt \
-    --gzipped-compressed \
     --output ${input_table.baseName}_kraken2_classification.txt \
     ${fastq1} ${fastq2} ${params.kraken2_params}
 
@@ -561,8 +575,7 @@ process Kraken2ClassificationPaired {
 */
 process CentrifugeClassificationPaired {
     tag "CentrifugeClassificationSingle ${input_table.baseName}"
-
-    publishDir "${params.output_dir}/${input_table.baseName}/classification/centrifuge", mode: 'symlink'
+    publishDir "${params.output_dir}/${input_table.baseName}/classification/centrifuge", mode: 'copy'
 
     input:
     path input_table
@@ -589,6 +602,32 @@ process CentrifugeClassificationPaired {
 
     """
 }
+
+process WgsimSimulateReads {
+    tag "WgsimSimulateReads ${input_table.baseName}"
+    publishDir "${params.output_dir}", mode: 'copy'
+
+    input:
+    val technology
+    path input_table
+
+    output:
+    tuple val("${input_table.baseName}"), path("${input_table.baseName}/fastq/*.fq.gz")
+
+    script:
+    """
+    ${params.python_bin} ${params.wgsim_python_path} \
+    --input_table ${input_table} \
+    --prefix "${input_table.baseName}" \
+    --output_dir "${input_table.baseName}/fastq" \
+    --wgsim_args "${params.wgsim_args}"
+
+    bgzip ${input_table.baseName}/fastq/${input_table.baseName}_R1.fq
+    bgzip ${input_table.baseName}/fastq/${input_table.baseName}_R2.fq
+
+    """
+}
+
 
 /*
 * Simulate reads using the mess package and conda environment

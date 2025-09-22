@@ -1,42 +1,57 @@
 params.input_table = params.input_table ?: ""
+params.reads = params.reads ?: ""
 
 workflow {
+
+    if (params.reads == "") {
+        error("Reads directory path is not provided. Please set the 'reads' parameter.")
+    }
 
     if (params.input_table == "") {
         error("Input table path is not provided. Please set the 'input_table' parameter.")
     }
+
+
     input_table_ch = Channel.fromPath(params.input_table)
         .ifEmpty { error("Cannot find the input table: ${params.input_table}") }
 
-    // Get reference sequences for each taxonomic ID in the input table
-    matched_table_ch = ExtractFastaSequences(input_table_ch)
-    input_table_ch = FormatToMess(input_table_ch, matched_table_ch.input_table_with_sequences)
 
-    // Simulate reads based on the input table
-    reads_ch = SimulateReadsMess(params.technology, input_table_ch).map { table_id, fastq_files ->
-        // Unpack the list of FASTQ files into separate variables
-        def (fastq1, fastq2) = fastq_files
-        tuple(table_id, fastq1, fastq2)
-    }
-    // Process reads using classifiers
-    centrifuge_classification_ch = CentrifugeClassificationPaired(input_table_ch, reads_ch)
-    kraken2_classification_ch = Kraken2ClassificationPaired(input_table_ch, reads_ch)
-    merge_classification_results_ch = MergeClassificationResults(centrifuge_classification_ch, kraken2_classification_ch)
+
+    Channel.fromPath(["${params.reads}/*_R1.fq.gz", "${params.reads}/*_R2.fq.gz"])
+        .map { file -> tuple(file) }
+        .ifEmpty { error('Cannot find any paired-end fastq files') }
+        .set { reads_ch }
+
+
+
+    reads_ch = reads_ch.collect()
+
+    processed_reads_ch = QCReadsPrinseqPaired(input_table_ch, reads_ch)
+
 
     // Extract reference sequences from the classification results
-    reference_sequences_ch = ExtractReferenceSequences(input_table_ch, merge_classification_results_ch)
+    reference_sequences_ch = ExtractReferenceSequences(input_table_ch)
 
     // Map reads to reference sequences using minimap2
     flattened_reference_sequences_ch = reference_sequences_ch.reference_sequences.flatMap { ref_list ->
         ref_list
     }
-    combined_ch = reads_ch.combine(flattened_reference_sequences_ch)
+    combined_ch = processed_reads_ch.combine(flattened_reference_sequences_ch)
+
+    // add input table basename to combined_ch tuple
+    combined_ch = input_table_ch.combine(combined_ch)
+
+
+    combined_ch = combined_ch.map { file, fastq1, fastq2, reference ->
+        def query_id = file.baseName
+        tuple(query_id, fastq1, fastq2, reference)
+    }
 
     mapped_reads_ch = MapMinimap2Paired(combined_ch, params.minimap2_illumina_params)
 
     // Extract mapping statistics from BAM files
     filtered_alignments_ch = FilterBamMsamtools(mapped_reads_ch)
-    sorted_reads_ch = sortBam(filtered_alignments_ch)
+    sorted_reads_ch = SortBam(filtered_alignments_ch)
     coverage_ch = SamtoolsCoverage(sorted_reads_ch)
 
     // collect all mapping files, provide directory for clustering
@@ -57,8 +72,31 @@ workflow {
         clustering_ch.clade_report,
         reference_sequences_ch.matched_assemblies,
         merged_coverage_ch.merged_coverage_statistics,
-        merge_classification_results_ch,
     )
+}
+
+
+/*
+* Quality control of the reads using prinseq++
+*/
+process QCReadsPrinseqPaired {
+    publishDir "${params.output_dir}/qc_prinseq_reads", mode: 'symlink'
+    debug true
+
+    input:
+    path input_table
+    tuple path(fastq1), path(fastq2)
+
+    output:
+    tuple path("${input_table.baseName}_good_R1.fastq.gz"), path("${input_table.baseName}_good_R2.fastq.gz")
+
+    script:
+    """
+    prinseq++ ${params.prinseq_params} -fastq ${fastq1} -fastq2 ${fastq2} -out_good ${input_table.baseName}_good_R1.fastq -out_bad ${input_table.baseName}_bad_R1.fastq \
+    -out_good2 ${input_table.baseName}_good_R2.fastq -out_bad2 ${input_table.baseName}_bad_R2.fastq
+    bgzip ${input_table.baseName}_good_R1.fastq && bgzip ${input_table.baseName}_good_R2.fastq
+    bgzip ${input_table.baseName}_bad_R1.fastq && bgzip ${input_table.baseName}_bad_R2.fastq
+    """
 }
 
 /*
@@ -85,6 +123,8 @@ process FormatToMess {
         if 'assembly_file' not in matched_table.columns:
             raise ValueError("The matched table must contain a 'path' or 'assembly_file' column.")
         matched_table.rename(columns = {'assembly_file': 'path'}, inplace=True)
+    
+    matched_table = matched_table[matched_table['path'].notna()]
     matched_table['fasta'] = matched_table['path'].apply(lambda x: os.path.basename(x))
     matched_table.to_csv("${input_table.baseName}.tsv", sep="\\t", index=False)
     """
@@ -172,7 +212,7 @@ process SamtoolsCoverage {
 /*
 * sort and index bam file, maintain tuple file, query_id, reference_id in channel
 */
-process sortBam {
+process SortBam {
     tag "sortMapping"
     publishDir "${params.output_dir}/${query_id}/sorted_reads", mode: 'symlink'
 
@@ -217,23 +257,25 @@ process FilterBamMsamtools {
 */
 process MatchCladeReportWithReferenceSequences {
     tag "MatchCladeReportWithReferenceSequences ${input_table.baseName}"
-    publishDir "${params.output_dir}/${input_table.baseName}/clustering", mode: 'symlink'
+    publishDir "${params.output_dir}/${input_table.baseName}/output", mode: 'copy'
 
     input:
     path input_table
     path clade_report
     path matched_assemblies
     path coverage_report
-    path merge_classification_results
 
     output:
     path "clade_report_with_references.tsv", emit: clade_report_with_references
+    path clade_report
+    path matched_assemblies
+    path coverage_report
 
     script:
     """
     #!/usr/bin/env python3
     import pandas as pd
-    clade_report = pd.read_csv("${clade_report}", sep="\\t", header=None, names=["clade", "nuniq", "freq", "files"])
+    clade_report = pd.read_csv("${clade_report}", sep="\\t", header=None,  names=["clade", "nuniq", "freq", "min_pair_dist", "nfiles", "files"])
     clade_report['clade']
     clade_report['files'] = clade_report['files'].str.split(',')
     clade_report = clade_report.explode('files')
@@ -242,7 +284,6 @@ process MatchCladeReportWithReferenceSequences {
     matched_assemblies['filename'] = matched_assemblies['assembly_file'].str.split('/').str[-1]
 
     coverage_report = pd.read_csv("${coverage_report}", sep="\\t")
-    merged_classification_results = pd.read_csv("${merge_classification_results}", sep="\\t")
 
     def find_assembly_mapping(row):
         accession = row['assembly_accession']
@@ -262,9 +303,12 @@ process MatchCladeReportWithReferenceSequences {
             row['freq'] = match['freq'].values[0]
         
         return row
-    
+
     def find_assembly_coverage(row):
         accession = row['assembly_accession']
+        if accession is None or pd.isna(accession):
+            row['coverage'] = 0
+            return row
         match = coverage_report[coverage_report['file'].str.contains(accession, na=False)]
         if match.empty:
             row['coverage'] = 0
@@ -272,22 +316,11 @@ process MatchCladeReportWithReferenceSequences {
             row['coverage'] = match['coverage'].values[0]
         
         return row
-    
-    def find_assembly_classification(row):
-        taxid = row['taxid']
-        match = merged_classification_results[merged_classification_results['taxid'] == taxid]
-        if match.empty:
-            row['classifier'] = 'unclassified'
-        else:
-            row['classifier'] = match['classification'].values[0]
-        
-        return row
-    
+
     clade_report_with_references = matched_assemblies.apply(find_assembly_mapping, axis=1)
-    clade_report_with_references = clade_report_with_references.apply(find_assembly_classification, axis=1)
     clade_report_with_references = clade_report_with_references.apply(find_assembly_coverage, axis=1)
     clade_report_with_references = clade_report_with_references[['description', 'taxid', 'assembly_accession', \
-            'coverage', 'clade', 'nuniq', 'freq', 'classifier']]
+            'coverage', 'clade', 'nuniq', 'freq']]
 
     clade_report_with_references.to_csv("clade_report_with_references.tsv", sep="\\t", index=False)
     """
@@ -404,7 +437,6 @@ process ExtractReferenceSequences {
 
     input:
     path input_table
-    path classifier_output
 
     output:
     path "reference_sequences/*gz", emit: reference_sequences
@@ -413,7 +445,7 @@ process ExtractReferenceSequences {
     script:
     """
     ${params.python_bin} ${params.references_extract_script} retrieve \
-    --input_table ${classifier_output} \
+    --input_table ${input_table} \
     --assembly_store "${params.assembly_store}" \
     --mapping_references_dir "reference_sequences" 
     """
@@ -513,7 +545,6 @@ process Kraken2ClassificationPaired {
     """
     ${params.kraken2_bin} --db ${params.kraken2_index} \
     --report ${input_table.baseName}_kraken2_report.txt \
-    --gzipped-compressed \
     --output ${input_table.baseName}_kraken2_classification.txt \
     ${fastq1} ${fastq2} ${params.kraken2_params}
 

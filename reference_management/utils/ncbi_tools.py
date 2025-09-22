@@ -6,36 +6,74 @@ import subprocess
 from dataclasses import dataclass
 from typing import Tuple, Optional
 # read email from local .env file
-
+import numpy as np
 import dotenv
 dotenv.load_dotenv()
+import pandas as pd
 
 Entrez.email = os.getenv("NCBI_EMAIL", None)
 if Entrez.email is None:
     raise ValueError("NCBI_EMAIL environment variable not set. Please set it to your email address.")
 
+NCBI_TAXONOMY_LEVELS = ['superkingdom', 'phylum', 'class', 'order', 'family', 'genus', 'species']
+
+def compare_lineages(lineage1: Optional[str], lineage2: Optional[str]) -> tuple[float, Optional[str]]:
+    """
+    Compare two lineages. Split by ';' and compare each level.
+    add points for each match, normalize by the length of the longer lineage.
+    """
+    
+    if lineage1 is None or lineage2 is None:
+        return 0.0, None
+
+    if pd.isna(lineage1) or pd.isna(lineage2):
+        return 0.0, None
+
+    levels1 = lineage1.split('; ')
+    levels2 = lineage2.split('; ')
+    min_length = min(len(levels1), len(levels2))
+    max_length = max(len(levels1), len(levels2))
+    score = 0
+    level= None
+    for i in range(min_length):
+        if i < min_length and levels1[i] == levels2[i]:
+            score += 1
+
+            if i < len(NCBI_TAXONOMY_LEVELS):
+                level = NCBI_TAXONOMY_LEVELS[i]
+            else:
+                level = f"level_{i+1}"
+        else:
+            break
+    if max_length == 0:
+        return 0.0, None
+    return score / (len(levels1)), level
+
 @dataclass
 class Passport:
     taxid: Optional[str]
-    accession: Optional[str]
-
-
+    accession: Optional[str] = None
+    lineage: Optional[str] = None
+    description: Optional[str] = None
 
     def __str__(self):
         return f"TaxID: {self.taxid}, Accession: {self.accession}"
 
     @property
     def prefix(self):
-        if self.accession:
+        if self.accession is not None:
             return f"{self.taxid}_{self.accession}"
         else:
             return f"{self.taxid}"
 
+    def compare_lineage(self, other_lineage: Optional[str]) -> tuple[float, Optional[str]]:
+        return compare_lineages(self.lineage, other_lineage)
 
+    
 @dataclass
 class LocalAssembly(Passport):
 
-    file_path: str
+    file_path: Optional[str] = None
 
     def __str__(self):
         return f"TaxID: {self.taxid}, Accession: {self.accession}, File Path: {self.file_path}"
@@ -44,12 +82,29 @@ class LocalAssembly(Passport):
 @dataclass
 class ReferenceData(Passport):
 
-    description: Optional[str] = None
     nucleotide_id: Optional[str] = None
     assembly_id: Optional[str] = None
 
     def __str__(self):
         return f"TaxID: {self.taxid}, Accession: {self.accession}, Description: {self.description}, Nucleotide ID: {self.nucleotide_id}, Assembly ID: {self.assembly_id}"
+
+
+def retrieve_passport_taxonomy(taxid: str) -> Optional[str]:
+    """
+    Retrieve taxonomy information for a given taxid.
+    """
+    try:
+        handle = Entrez.efetch(db="taxonomy", id=taxid, retmode="xml")
+        records = Entrez.read(handle)
+        handle.close()
+        if not records:
+            raise ValueError(f"No taxonomy found for taxid {taxid}")
+        lineage = records[0]['Lineage']
+        # standardize lineage to taxonomy levels
+        return lineage
+    except Exception as e:
+        print(f"An error occurred while fetching taxonomy for taxid {taxid}: {e}")
+        return None
 
 
 def retrieve_reference_sequence_id(accID: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
@@ -208,11 +263,30 @@ class NCBITools:
         ch.setFormatter(formatter)
         self.logger.addHandler(ch)
         self.logger.propagate = False
+    
+    def retrieve_passport_taxonomy(self, passport:Passport) -> Optional[str]:
+        """
+        Retrieve taxonomy information for a given taxid.
+        """
+        try:
+            handle = Entrez.efetch(db="taxonomy", id=passport.taxid, retmode="xml")
+            records = Entrez.read(handle)
+            handle.close()
+            if not records:
+                raise ValueError(f"No taxonomy found for taxid {passport.taxid}")
+            lineage = records[0]['Lineage']
+            return lineage
+        except Exception as e:
+            self.logger.error(f"An error occurred while fetching taxonomy for taxid {passport.taxid}: {e}")
+            return None
 
     def query_sequence_databases(self, passport:Passport) -> ReferenceData:
         """
         use both strategies above
         """
+
+        lineage = self.retrieve_passport_taxonomy(passport)
+        passport.lineage = lineage
 
         if passport.accession is not None:
 
@@ -222,6 +296,7 @@ class NCBITools:
                 return ReferenceData(
                     taxid=passport.taxid,
                     accession=passport.accession,
+                    lineage=passport.lineage,
                     description=description,
                     nucleotide_id=nucleotide_id
                 )
@@ -232,18 +307,33 @@ class NCBITools:
         accession, description, nucleotide_id = get_reference_sequence_url(passport.taxid)
 
         if accession is not None and nucleotide_id is not None:
+            passport.accession = accession
             return ReferenceData(
                 taxid=passport.taxid,
                 accession=accession,
+                lineage=passport.lineage,
                 description=description,
                 nucleotide_id=nucleotide_id
             )
         
         accession, description, assembly_id = get_representative_assembly(passport.taxid)
+
+        if accession is None and assembly_id is None:
+            self.logger.error(f"No reference data found for taxid {passport.taxid}")
+            return ReferenceData(
+                taxid=passport.taxid,
+                accession=None,
+                lineage=passport.lineage,
+                description=None,
+                assembly_id=None
+            )
+        
+        passport.accession = accession
         
         return ReferenceData(
             taxid=passport.taxid,
             accession=accession,
+            lineage=passport.lineage,
             description=description,
             assembly_id=assembly_id
         )

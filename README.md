@@ -17,9 +17,9 @@ The project is structured to facilitate the evaluation of clustering methods on 
 
 Directories containing deployment scripts and parameters for running
 
-- [**deployment_benchmark/**](deployment_benchmark): Simulate reads, map classified reads to reference assemblies, cluster mapped reads.
+- [**deployment_benchmark/**](deployment/deployment_benchmark): Simulate reads, map classified reads to reference assemblies, cluster mapped reads.
 
-- [**deployment_map_cluster/**](deployment_map_cluster): Map reads onto table of provided references, cluster the results.
+- [**deployment_map_cluster/**](deployment/deployment_map_cluster): Map reads onto table of provided references, cluster the results.
 
 ## Requirements
 
