@@ -624,7 +624,6 @@ process WgsimSimulateReads {
 
     bgzip ${input_table.baseName}/fastq/${input_table.baseName}_R1.fq
     bgzip ${input_table.baseName}/fastq/${input_table.baseName}_R2.fq
-
     """
 }
 

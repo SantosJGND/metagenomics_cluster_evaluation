@@ -53,6 +53,7 @@ class AssemblyStore:
 
         self.ncbi = NCBITools()
 
+
     def get_assembly_path(self, taxid: str) -> str:
         return os.path.join(self.store_path, taxid)
 
@@ -65,8 +66,6 @@ class AssemblyStore:
 
         # Assuming the first file is the assembly file
         assembly_file = os.path.join(taxid_subdir, f"{passport.prefix}_sequence.fasta.gz")
-        print(passport.prefix)
-        print(f"Checking for local assembly at {assembly_file}")
 
         if not os.path.exists(assembly_file):
             self.logger.warning(f"No assembly file found for taxid {passport.taxid} and accession {passport.accession}")
@@ -91,8 +90,8 @@ class AssemblyStore:
         
         # If not found locally, fetch from NCBI
         self.logger.info(f"Fetching assembly for taxid {passport.taxid} from NCBI...")
-
-        reference_data = self.ncbi.query_sequence_databases(passport)
+        # exclude plasmids from search
+        reference_data = self.ncbi.query_sequence_databases(passport, include_term='chromosome', exclude_term="plasmid")
         assembly_dir = os.path.join(self.store_path, str(passport.taxid))
         os.makedirs(assembly_dir, exist_ok=True)
 

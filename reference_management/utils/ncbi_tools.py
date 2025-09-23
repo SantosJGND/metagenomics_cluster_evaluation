@@ -107,16 +107,27 @@ def retrieve_passport_taxonomy(taxid: str) -> Optional[str]:
         return None
 
 
-def retrieve_reference_sequence_id(accID: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+def retrieve_reference_sequence_id(accID: str, include_term = None, exclude_term=None) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """
     Retrieve NCBI sequence ID for a given accession ID.
     """
     try:
-        handle = Entrez.esearch(db="nucleotide", term=accID, retmax=1)
+        term = accID
+        if exclude_term is not None:
+            term += f" NOT {exclude_term}"
+
+        if include_term is not None:
+            term += f" AND {include_term}"
+        
+        print("Searching NCBI with term:", term)
+
+        handle = Entrez.esearch(db="nucleotide", term=term, retmax=20)
         record = Entrez.read(handle)
         handle.close()
+
         if not record['IdList']:
             raise ValueError(f"No sequence found for accession {accID}")
+        
         sequence_id = record['IdList'][0]
         
         handle = Entrez.esummary(db="nucleotide", id=sequence_id)
@@ -130,7 +141,6 @@ def retrieve_reference_sequence_id(accID: str) -> Tuple[Optional[str], Optional[
         description = summary[0].get('Title', 'No description available')
         return accession, description, sequence_id
 
-
     except ValueError as e:
         print(e)
         return None, None, None
@@ -140,13 +150,20 @@ def retrieve_reference_sequence_id(accID: str) -> Tuple[Optional[str], Optional[
 
 
 
-def get_reference_sequence_url(taxid) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+def get_reference_sequence_url(taxid, include_term=None, exclude_term=None) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """
     Retrieve the reference sequence URL for a given taxid from the nucleotide database.
     """
     try:
+        term = f"txid{taxid}[Organism:exp] AND refseq"
+        if include_term is not None:
+            term += f" AND {include_term}"
+        if exclude_term is not None:
+            term += f" NOT {exclude_term}"
+
+        print("Searching NCBI Nucleotide with term:", term)
         # Search for nucleotide sequences for the given taxid
-        handle = Entrez.esearch(db="nucleotide", term=f"txid{taxid}[Organism:exp] AND refseq", retmax=1)
+        handle = Entrez.esearch(db="nucleotide", term=term, retmax=1)
         record = Entrez.read(handle)
         handle.close()
         if not record['IdList']:
@@ -178,10 +195,18 @@ def get_reference_sequence_url(taxid) -> Tuple[Optional[str], Optional[str], Opt
         return None, None, None
 
 
-def get_representative_assembly(taxid) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+def get_representative_assembly(taxid, include_term= None, exclude_term = None) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     try:
         # Search for assemblies for the given taxid
-        handle = Entrez.esearch(db="assembly", term=f"txid{taxid}[Organism:exp]", retmax=5)
+        term = f"txid{taxid}[Organism:exp]" 
+        if exclude_term is not None:
+            term += f" NOT {exclude_term}"
+        if include_term is not None:
+            term += f" AND {include_term}"
+        
+        print("Searching NCBI Assembly with term:", term)
+
+        handle = Entrez.esearch(db="assembly", term=term, retmax=5)
         record = Entrez.read(handle)
         handle.close()
         if not record['IdList']:
@@ -280,7 +305,7 @@ class NCBITools:
             self.logger.error(f"An error occurred while fetching taxonomy for taxid {passport.taxid}: {e}")
             return None
 
-    def query_sequence_databases(self, passport:Passport) -> ReferenceData:
+    def query_sequence_databases(self, passport:Passport, include_term = None, exclude_term = None) -> ReferenceData:
         """
         use both strategies above
         """
@@ -290,7 +315,7 @@ class NCBITools:
 
         if passport.accession is not None:
 
-            accession, description, nucleotide_id = retrieve_reference_sequence_id(passport.accession)
+            accession, description, nucleotide_id = retrieve_reference_sequence_id(passport.accession, include_term=include_term, exclude_term=exclude_term)
             if nucleotide_id is not None:
                 
                 return ReferenceData(
@@ -304,7 +329,7 @@ class NCBITools:
                 self.logger.warning(f"No nucleotide ID found for accession {passport.accession}, falling back to taxid search.")
             
 
-        accession, description, nucleotide_id = get_reference_sequence_url(passport.taxid)
+        accession, description, nucleotide_id = get_reference_sequence_url(passport.taxid, include_term=include_term, exclude_term=exclude_term)
 
         if accession is not None and nucleotide_id is not None:
             passport.accession = accession
@@ -315,7 +340,7 @@ class NCBITools:
                 description=description,
                 nucleotide_id=nucleotide_id
             )
-        
+        print("No nucleotide sequence found, trying assembly...")
         accession, description, assembly_id = get_representative_assembly(passport.taxid)
 
         if accession is None and assembly_id is None:

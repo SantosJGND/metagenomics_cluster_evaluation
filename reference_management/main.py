@@ -119,7 +119,7 @@ def check_assemblies_exist(args):
 
         passport = Passport(taxid = taxid, accession = accid)
         ncbi_tools = NCBITools()
-        reference_data = ncbi_tools.query_sequence_databases(passport)
+        reference_data = ncbi_tools.query_sequence_databases(passport, include_term='chromosome', exclude_term="plasmid")
 
         row['assembly_accession'] = reference_data.accession
         row['description'] = reference_data.description
