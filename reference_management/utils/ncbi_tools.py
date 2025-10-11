@@ -56,6 +56,14 @@ class Passport:
     lineage: Optional[str] = None
     description: Optional[str] = None
 
+    def __init__(self, taxid: Optional[str], accession: Optional[str] = None, lineage: Optional[str] = None, description: Optional[str] = None):
+        if "." in str(taxid):
+            taxid = str(taxid).split(".")[0]
+        self.taxid = taxid
+        self.accession = accession
+        self.lineage = lineage
+        self.description = description
+
     def __str__(self):
         return f"TaxID: {self.taxid}, Accession: {self.accession}"
 
@@ -309,7 +317,14 @@ class NCBITools:
         """
         use both strategies above
         """
-
+        if passport.taxid is None:
+            self.logger.error("No taxid provided in passport.")
+            return ReferenceData(
+                taxid=None,
+                accession=None,
+                lineage=None,
+                description=None
+            )
         lineage = self.retrieve_passport_taxonomy(passport)
         passport.lineage = lineage
 

@@ -18,6 +18,9 @@ workflow {
         def (fastq1, fastq2) = fastq_files
         tuple(table_id, fastq1, fastq2)
     }
+
+    reads_ch = QCReadsPrinseqPaired(input_table_ch, reads_ch)
+
     // Process reads using classifiers
     centrifuge_classification_ch = CentrifugeClassificationPaired(input_table_ch, reads_ch)
     kraken2_classification_ch = Kraken2ClassificationPaired(input_table_ch, reads_ch)
@@ -75,7 +78,7 @@ process QCReadsPrinseqPaired {
     tuple val(query_id), path(fastq1), path(fastq2)
 
     output:
-    tuple path("${input_table.baseName}_good_R1.fastq.gz"), path("${input_table.baseName}_good_R2.fastq.gz")
+    tuple val(query_id), path("${input_table.baseName}_good_R1.fastq.gz"), path("${input_table.baseName}_good_R2.fastq.gz")
 
     script:
     """

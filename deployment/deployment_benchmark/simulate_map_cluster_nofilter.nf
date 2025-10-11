@@ -35,8 +35,8 @@ workflow {
     mapped_reads_ch = MapMinimap2Paired(combined_ch, params.minimap2_illumina_params)
 
     // Extract mapping statistics from BAM files
-    filtered_alignments_ch = FilterBamMsamtools(mapped_reads_ch)
-    sorted_reads_ch = sortBam(filtered_alignments_ch)
+    //filtered_alignments_ch = FilterBamMsamtools(mapped_reads_ch)
+    sorted_reads_ch = sortBam(mapped_reads_ch)
     coverage_ch = SamtoolsCoverage(sorted_reads_ch)
 
     // collect all mapping files, provide directory for clustering
