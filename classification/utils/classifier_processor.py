@@ -54,10 +54,12 @@ class KrakenOutputProcessor(ClassifierOutputProcesseor):
         self.min_uniq_reads = min_uniq_reads
     
     def from_file(self):    
-
-        kraken_report = pd.read_csv(self.output_path, sep="\t")
-        kraken_report.columns = ["PercReads", "NumReadsRoot", "Nreads", "RankCode", "taxID", "name"]
-        kraken_report["prefix_spaces"] = kraken_report["name"].apply(count_prefix_spaces)
+        try:
+            kraken_report = pd.read_csv(self.output_path, sep="\t")
+            kraken_report.columns = ["PercReads", "NumReadsRoot", "Nreads", "RankCode", "taxID", "name"]
+            kraken_report["prefix_spaces"] = kraken_report["name"].apply(count_prefix_spaces)
+        except pd.errors.EmptyDataError:
+            kraken_report = pd.DataFrame(columns=["PercReads", "NumReadsRoot", "Nreads", "RankCode", "taxID", "name"])
 
         nodes, edges = self.kraken_report_to_tree(kraken_report)
         self.nodes_dict = {node[0]: node for node in nodes}
