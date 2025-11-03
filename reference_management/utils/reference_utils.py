@@ -159,6 +159,9 @@ class AssemblyStore:
             if local_assembly:
                 df.at[index, 'assembly_accession'] = local_assembly.accession
                 df.at[index, 'assembly_file'] = local_assembly.file_path
+        
+        if df.empty:
+            df = pd.DataFrame(columns=['taxid', 'assembly_accession', 'assembly_file'])
 
         return df
 
