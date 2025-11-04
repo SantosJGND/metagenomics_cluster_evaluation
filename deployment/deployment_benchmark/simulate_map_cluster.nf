@@ -28,7 +28,9 @@ workflow {
     merge_classification_results_ch = MergeClassificationResults(centrifuge_classification_ch, kraken2_classification_ch)
 
     // Extract reference sequences from the classification results
-    reference_sequences_ch = ExtractReferenceSequences(input_table_ch, merge_classification_results_ch).ifEmpty {
+    reference_sequences_ch = ExtractReferenceSequences(input_table_ch, merge_classification_results_ch)
+
+    reference_sequences_ch.reference_sequences.ifEmpty {
         error("No reference sequences were extracted. Please check the classification results and the assembly store.")
         System.exit(1)
     }
