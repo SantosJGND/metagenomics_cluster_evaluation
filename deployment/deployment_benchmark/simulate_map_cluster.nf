@@ -31,12 +31,7 @@ workflow {
     reference_sequences_ch = ExtractReferenceSequences(input_table_ch, merge_classification_results_ch)
 
     // Check if reference sequences are empty and end workflow gracefully if so
-    flattened_reference_sequences_ch = reference_sequences_ch.reference_sequences
-        .flatMap { ref_list -> ref_list }
-        .ifEmpty {
-            log.warn("No reference sequences were extracted for ${params.input_table}. Ending workflow.")
-            return channel.empty()
-        }
+    flattened_reference_sequences_ch = reference_sequences_ch.reference_sequences.flatMap { ref_list -> ref_list }
 
     combined_ch = reads_ch.combine(flattened_reference_sequences_ch)
 

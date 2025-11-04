@@ -62,7 +62,9 @@ def retrieve_assemblies(args):
 
     assembly_store = AssemblyStore(assembly_store)
     df = assembly_store.match_taxid_to_assembly(classification_output_path)
+    
     assembly_store.setup_mapping_references(df, mapping_references_dir=mapping_references_dir)
+    df = df.dropna(subset=['assembly_accession', 'assembly_file'])
     df.to_csv(
         os.path.join(mapping_references_dir, "matched_assemblies.tsv"),
         index=False,

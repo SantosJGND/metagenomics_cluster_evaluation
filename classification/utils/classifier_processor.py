@@ -40,7 +40,7 @@ class CentrifugeOutputProcessor(ClassifierOutputProcesseor):
     def process(self):
         self.report.sort_values("numUniqueReads", ascending=False, inplace=True)
         self.report = self.report[self.report["numUniqueReads"] >= self.nuniq_threshold].reset_index(drop=True)
-        self.final_report = self.report[["name", "taxID"]].rename(columns={"name": "description"})
+        self.final_report = self.report[["name", "taxID", "numUniqueReads"]].rename(columns={"name": "description", "numUniqueReads": "uniq_reads_centrifuge"})
         return self
 
 
@@ -79,10 +79,9 @@ class KrakenOutputProcessor(ClassifierOutputProcesseor):
         leaves_simple = self.get_simplified_leaves(self.nodes, self.edges)
         leaves_simple = {self.get_node_info(parent): [self.get_node_info(leaf) for leaf in leaves] for parent, leaves in leaves_simple.items()}
         leaves_summary = self.summarize_leaves(leaves_simple)
-        leaves_summary = leaves_summary[leaves_summary["perc_reads"] > self.min_uniq_reads]
+        leaves_summary = leaves_summary[leaves_summary["Nreads"] > self.min_uniq_reads]
         self.final_report = leaves_summary.rename(columns={"name": "description"})
-        self.final_report = self.final_report[["description", "taxID"]]
-        
+        self.final_report = self.final_report[["description", "taxID", "Nreads"]].rename(columns={"Nreads": "uniq_reads_kraken2"})
         return self
 
     @staticmethod
@@ -97,10 +96,11 @@ class KrakenOutputProcessor(ClassifierOutputProcesseor):
             tax_id = row["taxID"]
             prefix_spaces = count_prefix_spaces(row["name"])
             perc_reads = row["PercReads"]
+            nreads = row["Nreads"]
             tax_rank = row["RankCode"]
 
-            nodes_list.append((tax_id, name, prefix_spaces, perc_reads, tax_rank))
-            taxid_dict[tax_id] = (name, prefix_spaces, perc_reads, tax_rank)
+            nodes_list.append((tax_id, name, prefix_spaces, perc_reads, nreads, tax_rank))
+            taxid_dict[tax_id] = (name, prefix_spaces, perc_reads, nreads, tax_rank)
 
             # find parent node
             parent_node = None
@@ -159,7 +159,7 @@ class KrakenOutputProcessor(ClassifierOutputProcesseor):
                 leaf = node[0]
                 parent = list(G.predecessors(leaf))
                 parent_detail =  self.get_node_info(parent[0]) if parent else None
-                while parent and "S" in parent_detail[4]:
+                while parent and "S" in parent_detail[5]:
                     leaf = parent[0]
                     parent = list(G.predecessors(leaf))
                     parent_detail =  self.get_node_info(parent[0]) if parent else None
@@ -179,11 +179,11 @@ class KrakenOutputProcessor(ClassifierOutputProcesseor):
         """
         summary = []
         for parent, leaves in leaves_simple.items():
-            if "S" in parent[4]:
+            if "S" in parent[5]:
                 summary.append(parent)
             else:
                 # find leaf with highest numUniqueReads
                 best_leaf = max(leaves, key=lambda x: x[3])
                 summary.append(best_leaf)
-        return pd.DataFrame(summary, columns=["taxID", "description", "prefix_spaces", "perc_reads", "rank_code"])
+        return pd.DataFrame(summary, columns=["taxID", "description", "prefix_spaces", "perc_reads", "Nreads", "rank_code"])
 

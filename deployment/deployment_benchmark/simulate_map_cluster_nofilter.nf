@@ -5,7 +5,8 @@ workflow {
     if (params.input_table == "") {
         error("Input table path is not provided. Please set the 'input_table' parameter.")
     }
-    input_table_ch = Channel.fromPath(params.input_table)
+    input_table_ch = Channel
+        .fromPath(params.input_table)
         .ifEmpty { error("Cannot find the input table: ${params.input_table}") }
 
     // Get reference sequences for each taxonomic ID in the input table
@@ -506,7 +507,12 @@ process MergeClassificationResults {
             return 'centrifuge'
         else:
             return 'unclassified'
-    
+
+    nhits_cent = merged_df['uniq_reads_centrifuge'].fillna(0)
+    nhits_krak = merged_df['uniq_reads_kraken2'].fillna(0)
+    merged_df['total_uniq_reads'] = nhits_cent + nhits_krak
+    merged_df = merged_df.sort_values(by='total_uniq_reads', ascending=False)
+ 
     merged_df['classification'] = merged_df.apply(classify, axis=1)
     merged_df.to_csv(f"${query_id}_merged_classification.tsv", sep="\\t", index=False)
     """
