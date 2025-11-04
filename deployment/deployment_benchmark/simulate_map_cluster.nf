@@ -5,11 +5,21 @@ workflow {
     if (params.input_table == "") {
         error("Input table path is not provided. Please set the 'input_table' parameter.")
     }
-    input_table_ch = Channel.fromPath(params.input_table)
-        .ifEmpty { error("Cannot find the input table: ${params.input_table}") }
+    input_table_ch = Channel
+        .fromPath(params.input_table)
+        .ifEmpty {
+            // Exit gracefully when no input table is found
+            println("No input table found at: ${params.input_table}. Exiting workflow cleanly.")
+            System.exit(0)
+        }
 
     // Get reference sequences for each taxonomic ID in the input table
     matched_table_ch = ExtractFastaSequences(input_table_ch)
+    // If ExtractFastaSequences produced no matched table, exit cleanly
+    matched_table_ch.input_table_with_sequences = matched_table_ch.input_table_with_sequences.ifEmpty {
+        println("No matched assemblies were produced by ExtractFastaSequences. Exiting workflow cleanly.")
+        System.exit(0)
+    }
     input_table_ch = FormatToMess(input_table_ch, matched_table_ch.input_table_with_sequences)
 
     // Simulate reads based on the input table
@@ -17,6 +27,12 @@ workflow {
         // Unpack the list of FASTQ files into separate variables
         def (fastq1, fastq2) = fastq_files
         tuple(table_id, fastq1, fastq2)
+    }
+
+    // If no reads were simulated, exit cleanly
+    reads_ch = reads_ch.ifEmpty {
+        println("No reads were simulated from input table. Exiting workflow cleanly.")
+        System.exit(0)
     }
 
     reads_ch = QCReadsPrinseqPaired(input_table_ch, reads_ch)
@@ -28,6 +44,11 @@ workflow {
 
     // Extract reference sequences from the classification results
     reference_sequences_ch = ExtractReferenceSequences(input_table_ch, merge_classification_results_ch)
+    // If no reference sequences were produced, exit cleanly
+    reference_sequences_ch = reference_sequences_ch.ifEmpty {
+        println("No reference sequences were extracted. Exiting workflow cleanly.")
+        System.exit(0)
+    }
 
     // Map reads to reference sequences using minimap2
     flattened_reference_sequences_ch = reference_sequences_ch.reference_sequences.flatMap { ref_list ->
@@ -443,6 +464,7 @@ process MapMinimap2Paired {
     """
 }
 
+
 /*
 * Extract reference sequences from classifier output results to global reference database
 */
@@ -454,7 +476,7 @@ process ExtractReferenceSequences {
     path classifier_output
 
     output:
-    path "reference_sequences/*gz", emit: reference_sequences
+    path "reference_sequences/*gz", emit: reference_sequences, optional: true
     path "reference_sequences/matched_assemblies.tsv", emit: matched_assemblies
 
     script:
@@ -465,7 +487,6 @@ process ExtractReferenceSequences {
     --mapping_references_dir "reference_sequences" 
     """
 }
-
 
 /*
 * Merge classification results from different classifiers

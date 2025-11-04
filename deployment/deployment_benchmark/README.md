@@ -15,7 +15,6 @@ This will execute the workflow, mapping them to references, clustering the resul
 # Nextflow workflow
 
 ```mermaid
-
 flowchart TB
     subgraph " "
     v0["Taxid Table"]
@@ -23,26 +22,24 @@ flowchart TB
     v2([ExtractFastaSequences])
     v3([FormatToMess])
     v5([SimulateReadsMess])
-    v7([CentrifugeClassificationPaired])
-    v8([Kraken2ClassificationPaired])
+    v6([Prinseq++ QualityControlReads])
+    style v6 stroke:#1f77b4,stroke-width:4px
+    v7([Centrifuge ClassificationPaired])
+    v8([Kraken2 ClassificationPaired])
     v9([MergeClassificationResults])
     v10([ExtractReferenceSequences])
-    v14([MapMinimap2Paired])
-    v23([FilterBamMsamtools])
+    v14([Minimap2 MapPaired])
+    v23([Msamtools FilterBamFiles])
+    style v23 stroke:#1f77b4,stroke-width:4px
     v15([sortBam])
     v16([SamtoolsCoverage])
     v21([MergeCoverageStatistics])
     v22([ClusterMappedReads])
-    subgraph "Input"
-    end
     v24([MatchCladeReportWithReferenceSequences])
     v25([EvaluateClusteringResults])
-    v1(( ))
-    v6(( ))
-    v0 --> v1
-    v1 --> v2
+    v0 --> v2
+    v0 --> v3
     v2 --> v3
-    v1 --> v3
     v3 --> v5
     v5 --> v6
     v6 --> v7
@@ -52,7 +49,6 @@ flowchart TB
     v9 --> v10
     v9 --> v24
     v10 --> v24
-    v10 --> v6
     v10 --> v14
     v6 --> v14
     v14 --> v23
