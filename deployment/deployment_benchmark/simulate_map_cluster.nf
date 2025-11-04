@@ -30,15 +30,14 @@ workflow {
     // Extract reference sequences from the classification results
     reference_sequences_ch = ExtractReferenceSequences(input_table_ch, merge_classification_results_ch)
 
-    reference_sequences_ch.reference_sequences.ifEmpty {
-        error("No reference sequences were extracted. Please check the classification results and the assembly store.")
-        System.exit(1)
-    }
+    // Check if reference sequences are empty and end workflow gracefully if so
+    flattened_reference_sequences_ch = reference_sequences_ch.reference_sequences
+        .flatMap { ref_list -> ref_list }
+        .ifEmpty {
+            log.warn("No reference sequences were extracted for ${params.input_table}. Ending workflow.")
+            return channel.empty()
+        }
 
-    // Map reads to reference sequences using minimap2
-    flattened_reference_sequences_ch = reference_sequences_ch.reference_sequences.flatMap { ref_list ->
-        ref_list
-    }
     combined_ch = reads_ch.combine(flattened_reference_sequences_ch)
 
     mapped_reads_ch = MapMinimap2Paired(combined_ch, params.minimap2_illumina_params)
