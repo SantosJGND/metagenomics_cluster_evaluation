@@ -16,7 +16,7 @@ workflow {
     // Get reference sequences for each taxonomic ID in the input table
     matched_table_ch = ExtractFastaSequences(input_table_ch)
     // If ExtractFastaSequences produced no matched table, exit cleanly
-    matched_table_ch.input_table_with_sequences = matched_table_ch.input_table_with_sequences.ifEmpty {
+    matched_table_ch.input_table_with_sequences.ifEmpty {
         println("No matched assemblies were produced by ExtractFastaSequences. Exiting workflow cleanly.")
         System.exit(0)
     }
@@ -30,10 +30,6 @@ workflow {
     }
 
     // If no reads were simulated, exit cleanly
-    reads_ch = reads_ch.ifEmpty {
-        println("No reads were simulated from input table. Exiting workflow cleanly.")
-        System.exit(0)
-    }
 
     reads_ch = QCReadsPrinseqPaired(input_table_ch, reads_ch)
 
@@ -45,7 +41,7 @@ workflow {
     // Extract reference sequences from the classification results
     reference_sequences_ch = ExtractReferenceSequences(input_table_ch, merge_classification_results_ch)
     // If no reference sequences were produced, exit cleanly
-    reference_sequences_ch = reference_sequences_ch.ifEmpty {
+    reference_sequences_ch.ifEmpty {
         println("No reference sequences were extracted. Exiting workflow cleanly.")
         System.exit(0)
     }
@@ -150,7 +146,7 @@ process ExtractFastaSequences {
     path input_table
 
     output:
-    path "reference_sequences/matched_assemblies.tsv", emit: input_table_with_sequences
+    path "reference_sequences/matched_assemblies.tsv", emit: input_table_with_sequences, optional: true
 
     script:
     """
