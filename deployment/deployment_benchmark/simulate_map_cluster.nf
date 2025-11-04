@@ -7,19 +7,10 @@ workflow {
     }
     input_table_ch = Channel
         .fromPath(params.input_table)
-        .ifEmpty {
-            // Exit gracefully when no input table is found
-            println("No input table found at: ${params.input_table}. Exiting workflow cleanly.")
-            System.exit(0)
-        }
+        .ifEmpty { error("Cannot find the input table: ${params.input_table}") }
 
     // Get reference sequences for each taxonomic ID in the input table
     matched_table_ch = ExtractFastaSequences(input_table_ch)
-    // If ExtractFastaSequences produced no matched table, exit cleanly
-    matched_table_ch.input_table_with_sequences.ifEmpty {
-        println("No matched assemblies were produced by ExtractFastaSequences. Exiting workflow cleanly.")
-        System.exit(0)
-    }
     input_table_ch = FormatToMess(input_table_ch, matched_table_ch.input_table_with_sequences)
 
     // Simulate reads based on the input table
@@ -29,8 +20,6 @@ workflow {
         tuple(table_id, fastq1, fastq2)
     }
 
-    // If no reads were simulated, exit cleanly
-
     reads_ch = QCReadsPrinseqPaired(input_table_ch, reads_ch)
 
     // Process reads using classifiers
@@ -39,11 +28,9 @@ workflow {
     merge_classification_results_ch = MergeClassificationResults(centrifuge_classification_ch, kraken2_classification_ch)
 
     // Extract reference sequences from the classification results
-    reference_sequences_ch = ExtractReferenceSequences(input_table_ch, merge_classification_results_ch)
-    // If no reference sequences were produced, exit cleanly
-    reference_sequences_ch.ifEmpty {
-        println("No reference sequences were extracted. Exiting workflow cleanly.")
-        System.exit(0)
+    reference_sequences_ch = ExtractReferenceSequences(input_table_ch, merge_classification_results_ch).ifEmpty {
+        error("No reference sequences were extracted. Please check the classification results and the assembly store.")
+        System.exit(1)
     }
 
     // Map reads to reference sequences using minimap2
@@ -146,7 +133,7 @@ process ExtractFastaSequences {
     path input_table
 
     output:
-    path "reference_sequences/matched_assemblies.tsv", emit: input_table_with_sequences, optional: true
+    path "reference_sequences/matched_assemblies.tsv", emit: input_table_with_sequences
 
     script:
     """
@@ -460,7 +447,6 @@ process MapMinimap2Paired {
     """
 }
 
-
 /*
 * Extract reference sequences from classifier output results to global reference database
 */
@@ -483,6 +469,7 @@ process ExtractReferenceSequences {
     --mapping_references_dir "reference_sequences" 
     """
 }
+
 
 /*
 * Merge classification results from different classifiers
