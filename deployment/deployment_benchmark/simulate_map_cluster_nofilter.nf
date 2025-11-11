@@ -54,6 +54,7 @@ workflow {
     // Cluster mapped reads across alignment files
     clustering_ch = ClusterMappedReads(input_table_ch, mapping_files_info)
 
+
     MatchCladeReportWithReferenceSequences(
         input_table_ch,
         clustering_ch.clade_report,

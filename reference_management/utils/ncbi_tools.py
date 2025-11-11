@@ -164,10 +164,10 @@ def get_reference_sequence_url(taxid, include_term=None, exclude_term=None) -> T
     """
     try:
         term = f"txid{taxid}[Organism:exp] AND refseq"
-        if include_term is not None:
-            term += f" AND {include_term}"
-        if exclude_term is not None:
-            term += f" NOT {exclude_term}"
+        #if include_term is not None:
+        #    term += f" AND {include_term}"
+        #if exclude_term is not None:
+        #    term += f" NOT {exclude_term}"
 
         print("Searching NCBI Nucleotide with term:", term)
         # Search for nucleotide sequences for the given taxid
