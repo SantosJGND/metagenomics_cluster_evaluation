@@ -142,7 +142,7 @@ def main():
         retrieve_assemblies(args)
     elif args.command == "check":
         check_assemblies_exist(args)
-    
+
 
 
 if __name__ == "__main__":
