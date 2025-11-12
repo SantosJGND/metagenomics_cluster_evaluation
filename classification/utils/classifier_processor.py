@@ -19,6 +19,8 @@ def taxid_to_description(taxid: int) -> Optional[str]:
     Given a taxid, return the corresponding scientific name using NCBI Entrez.
     """
 
+    if taxid is None:
+        return None
     if taxid >= 10**7:
         return None
 
