@@ -460,7 +460,7 @@ process ExtractReferenceSequences {
     path classifier_output
 
     output:
-    path "reference_sequences/*gz", emit: reference_sequences
+    path "reference_sequences/*gz", emit: reference_sequences, optional: true
     path "reference_sequences/matched_assemblies.tsv", emit: matched_assemblies
 
     script:

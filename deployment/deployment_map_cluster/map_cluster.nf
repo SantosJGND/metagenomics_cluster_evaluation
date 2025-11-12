@@ -12,12 +12,14 @@ workflow {
     }
 
 
-    input_table_ch = Channel.fromPath(params.input_table)
+    input_table_ch = Channel
+        .fromPath(params.input_table)
         .ifEmpty { error("Cannot find the input table: ${params.input_table}") }
 
 
 
-    Channel.fromPath(["${params.reads}/*_R1.fq.gz", "${params.reads}/*_R2.fq.gz"])
+    Channel
+        .fromPath(["${params.reads}/*_R1.fq.gz", "${params.reads}/*_R2.fq.gz"])
         .map { file -> tuple(file) }
         .ifEmpty { error('Cannot find any paired-end fastq files') }
         .set { reads_ch }
@@ -439,7 +441,7 @@ process ExtractReferenceSequences {
     path input_table
 
     output:
-    path "reference_sequences/*gz", emit: reference_sequences
+    path "reference_sequences/*gz", emit: reference_sequences, optional: true
     path "reference_sequences/matched_assemblies.tsv", emit: matched_assemblies
 
     script:
