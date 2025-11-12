@@ -42,18 +42,26 @@ def protein_accession_to_taxid(accession: str) -> int:
     """
     Given a protein accession, return the corresponding taxid using NCBI Entrez.
     """
-    Entrez.email = "your_email@example.com"
-    handle = Entrez.esearch(db="protein", term=accession)
-    record = Entrez.read(handle)
-    handle.close()
-    record_handle = Entrez.esummary(db="protein", id=record["IdList"])
-    record = Entrez.parse(record_handle)
     taxid = None
-    for rec in record:
-        taxid = rec["TaxId"]
-        taxid = int(taxid)
+    try:
+        Entrez.email = "your_email@example.com"
+        handle = Entrez.esearch(db="protein", term=accession)
+        record = Entrez.read(handle)
+        handle.close()
+        record_handle = Entrez.esummary(db="protein", id=record["IdList"])
+        record = Entrez.parse(record_handle)
+        taxid = None
+        for rec in record:
+            taxid = rec["TaxId"]
+            taxid = int(taxid)
+        
+        return taxid
+
+    except urllib.error.HTTPError as e:
+        print(f"HTTP Error retrieving taxid for accession {accession}: {e}")
+        return None
     
-    return taxid
+    
 
 class ClassifierOutputProcesseor(ABC):
 
