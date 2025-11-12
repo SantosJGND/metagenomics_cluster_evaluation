@@ -6,6 +6,7 @@ from Bio import Entrez
 import os 
 import dotenv
 from typing import Optional
+import urllib.error
 
 dotenv.load_dotenv()
 
@@ -32,6 +33,9 @@ def taxid_to_description(taxid: int) -> Optional[str]:
         return record[0]["ScientificName"]
     except RuntimeError as e:
         print(f"Error retrieving description for taxid {taxid}: {e}")
+        return None
+    except urllib.error.HTTPError as e:
+        print(f"HTTP Error retrieving description for taxid {taxid}: {e}")
         return None
 
 def protein_accession_to_taxid(accession: str) -> int:
