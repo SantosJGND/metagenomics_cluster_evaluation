@@ -82,8 +82,6 @@ class AssemblyStore:
         # First, check if the assembly is available locally
         local_assembly = self.retrieve_local_assembly(passport)
 
-        print("### local assembly ###")
-        print("local_assembly", local_assembly)
         if local_assembly:
             self.logger.info(f"Using local assembly for taxid {passport.taxid}: {local_assembly.file_path}")
             return local_assembly
@@ -159,6 +157,10 @@ class AssemblyStore:
             if local_assembly:
                 df.at[index, 'assembly_accession'] = local_assembly.accession
                 df.at[index, 'assembly_file'] = local_assembly.file_path
+            else:
+                self.logger.warning(f"No assembly found for taxid {taxid} and accession {accession}.")
+                df.at[index, 'assembly_accession'] = None
+                df.at[index, 'assembly_file'] = None
         
         if df.empty:
             df = pd.DataFrame(columns=['taxid', 'assembly_accession', 'assembly_file'])
@@ -176,7 +178,7 @@ class AssemblyStore:
         
         if "assembly_accession" not in classification_output_path.columns or \
         "assembly_file" not in classification_output_path.columns:
-            raise ValueError("The DataFrame must contain 'assembly_accession' and 'assembly_file' columns.")
+            print("The DataFrame must contain 'assembly_accession' and 'assembly_file' columns.")
         
         for _, row in classification_output_path.iterrows():
             accession = row['assembly_accession']

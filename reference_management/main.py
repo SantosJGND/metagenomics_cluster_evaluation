@@ -64,6 +64,9 @@ def retrieve_assemblies(args):
     df = assembly_store.match_taxid_to_assembly(classification_output_path)
     
     assembly_store.setup_mapping_references(df, mapping_references_dir=mapping_references_dir)
+    if "assembly_accession" not in df.columns or "assembly_file" not in df.columns:
+        df['assembly_accession'] = None
+        df['assembly_file'] = None
     df = df.dropna(subset=['assembly_accession', 'assembly_file'])
     df.to_csv(
         os.path.join(mapping_references_dir, "matched_assemblies.tsv"),
