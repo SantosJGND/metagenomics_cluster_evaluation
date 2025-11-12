@@ -126,8 +126,7 @@ def retrieve_reference_sequence_id(accID: str, include_term = None, exclude_term
 
         if include_term is not None:
             term += f" AND {include_term}"
-        
-        print("Searching NCBI with term:", term)
+
 
         handle = Entrez.esearch(db="nucleotide", term=term, retmax=20)
         record = Entrez.read(handle)

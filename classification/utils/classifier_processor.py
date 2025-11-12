@@ -60,8 +60,11 @@ def protein_accession_to_taxid(accession: str) -> int:
     except urllib.error.HTTPError as e:
         print(f"HTTP Error retrieving taxid for accession {accession}: {e}")
         return None
+    except Exception as e:
+        print(f"Error retrieving taxid for accession {accession}: {e}")
+        return None
     
-    
+
 
 class ClassifierOutputProcesseor(ABC):
 
