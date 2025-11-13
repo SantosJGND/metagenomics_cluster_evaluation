@@ -406,11 +406,11 @@ process ClusterMappedReads {
     tuple val(query_id), path(mapped_reads)
 
     output:
-    path "clustering/clade_report.tsv", emit: clade_report
-    path "clustering/sample_report.tsv", emit: sample_report
-    path "clustering/distance_matrix.tsv", emit: distance_matrix
-    path "clustering/all_node_statistics.tsv", emit: all_node_statistics
-    path "clustering/nj_tree_edges.txt", emit: nj_tree_edges
+    path "clustering/clade_report.tsv", emit: clade_report, optional: true
+    path "clustering/sample_report.tsv", emit: sample_report, optional: true
+    path "clustering/distance_matrix.tsv", emit: distance_matrix, optional: true
+    path "clustering/all_node_statistics.tsv", emit: all_node_statistics, optional: true
+    path "clustering/nj_tree_edges.txt", emit: nj_tree_edges, optional: true
 
     script:
     def mapped_reads_string = mapped_reads.collect { it[0] }.join(',')
