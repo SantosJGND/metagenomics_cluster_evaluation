@@ -61,6 +61,11 @@ workflow {
     clustering_ch = ClusterMappedReads(input_table_ch, mapping_files_info)
 
 
+    clustering_ch.clade_report.ifEmpty {
+        log.info("No clustering results generated. Ending workflow.")
+        System.exit(0)
+    }
+
     MatchCladeReportWithReferenceSequences(
         input_table_ch,
         clustering_ch.clade_report,
