@@ -39,6 +39,9 @@ def taxid_to_description(taxid: int) -> Optional[str]:
     except urllib.error.HTTPError as e:
         print(f"HTTP Error retrieving description for taxid {taxid}: {e}")
         return None
+    except Exception as e:
+        print(f"Error retrieving description for taxid {taxid}: {e}")
+        return None
 
 def protein_accession_to_taxid(accession: str) -> int:
     """
