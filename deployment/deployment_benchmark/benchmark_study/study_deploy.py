@@ -270,17 +270,31 @@ def compound_eda_function(study_output_filepath: str,
 
     return test_results_df, summary_results_df, trash_results_df, cross_hit_results_df
 
+def get_args():
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Model Deployment for Overlap Manager")
+    parser.add_argument("--study_output_filepath", type=str, required=True, help="Path to the study output directory")
+    parser.add_argument("--taxid_plan_filepath", type=str, required=True, help="Path to the taxid plan file")
+    parser.add_argument("--analysis_output_filepath", type=str, required=True, help="Path to save analysis outputs")
+    parser.add_argument("--threshold", type=float, default=0.3, help="Threshold value for model")
+    parser.add_argument("--taxa_threshold", type=float, default=0.02, help="Taxa threshold for filtering")
+    parser.add_argument("--tax_level_to_use", type=str, default='order', help="Taxonomic level to use")
+    parser.add_argument("--data_set_divide", type=int, default=5, help="Data set divide for training/testing")
+
+    return parser.parse_args()
 
 
 if __name__ == "__main__":
-    study_output_filepath = "/home/bioinf/Desktop/INSA/Projectos/CLUSTER_EVAL/study/studies/model/output/study_simulation_virus"
-    taxid_plan_filepath = "/home/bioinf/Desktop/INSA/Projectos/CLUSTER_EVAL/test_run/tables/db/assessment.tsv"
-    study_output_filepath= "/home/bioinf/Desktop/INSA/Projectos/CLUSTER_EVAL/test_run/dev_output"
-    analysis_output_filepath = "/home/bioinf/Desktop/INSA/Projectos/CLUSTER_EVAL/test_run/output_analysis"
-    threshold = 0.3
-    taxa_threshold = 0.02
-    tax_level_to_use = 'order'
-    data_set_divide = 5
+    args = get_args()
+    study_output_filepath = args.study_output_filepath
+    taxid_plan_filepath = args.taxid_plan_filepath
+    analysis_output_filepath = args.analysis_output_filepath
+    threshold = args.threshold
+    taxa_threshold = args.taxa_threshold
+    tax_level_to_use = args.tax_level_to_use
+    data_set_divide = args.data_set_divide
+
 
     #### Define output files
     output_lineages = os.path.join(study_output_filepath, "lineages.tsv")
