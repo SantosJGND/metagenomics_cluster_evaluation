@@ -275,20 +275,19 @@ def get_subset_composition_counts(node_data, tax_data: pd.DataFrame, tax_level: 
     missing_orders = [tax for tax in input_taxa[tax_level] if tax not in counts_by_taxa[tax_level].tolist()]
     counts_by_taxa = pd.concat([counts_by_taxa, pd.DataFrame({'order': missing_orders, 'total_uniq_reads': [0]*len(missing_orders), 'proportion': [0.0]*len(missing_orders)})], ignore_index=True)
     # sort by input order
-    print(counts_by_taxa)
-    print(tax_level)
+
     counts_by_taxa.loc[:,'tax_level'] = pd.Categorical(counts_by_taxa[tax_level], categories=input_taxa[tax_level], ordered=True)
     counts_by_taxa = counts_by_taxa.sort_values('tax_level').reset_index(drop=True)
 
     return counts_by_taxa
 
 
-def node_composition_level(overlalp_manager: OverlapManager, node, m_stats_stats_matrix, tax_data: pd.DataFrame, tax_level: str = "order"):
+def node_composition_level(overlap_manager: OverlapManager, node, m_stats_stats_matrix, tax_data: pd.DataFrame, tax_level: str = "order"):
     """
     Get the composition of a node at a specific taxonomic level.
     """
     
-    node_leaves = overlalp_manager.get_node_leaves(node)
+    node_leaves = overlap_manager.get_node_leaves(node)
     node_data = m_stats_stats_matrix[m_stats_stats_matrix['leaf'].isin(node_leaves)].copy()  #
     composition = get_subset_composition(node_data, tax_data, tax_level=tax_level)
     return composition

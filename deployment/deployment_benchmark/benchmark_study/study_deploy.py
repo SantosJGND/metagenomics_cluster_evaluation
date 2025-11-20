@@ -295,6 +295,14 @@ if __name__ == "__main__":
     tax_level_to_use = args.tax_level_to_use
     data_set_divide = args.data_set_divide
 
+    #study_output_filepath = "/home/bioinf/Desktop/INSA/Projectos/CLUSTER_EVAL/study/studies/model/output/study_simulation_virus"
+    #taxid_plan_filepath = "/home/bioinf/Desktop/INSA/Projectos/CLUSTER_EVAL/test_run/tables/db/assessment_virus.tsv"
+    #study_output_filepath= "/home/bioinf/Desktop/INSA/Projectos/CLUSTER_EVAL/test_run/dev_output"
+    #analysis_output_filepath = "/home/bioinf/Desktop/INSA/Projectos/CLUSTER_EVAL/test_run/output_analysis"
+    #threshold = 0.3
+    #taxa_threshold = 0.02
+    #tax_level_to_use = 'order'
+    #data_set_divide = 5
 
     #### Define output files
     output_lineages = os.path.join(study_output_filepath, "lineages.tsv")
