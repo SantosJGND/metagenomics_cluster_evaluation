@@ -275,6 +275,8 @@ def get_subset_composition_counts(node_data, tax_data: pd.DataFrame, tax_level: 
     missing_orders = [tax for tax in input_taxa[tax_level] if tax not in counts_by_taxa[tax_level].tolist()]
     counts_by_taxa = pd.concat([counts_by_taxa, pd.DataFrame({'order': missing_orders, 'total_uniq_reads': [0]*len(missing_orders), 'proportion': [0.0]*len(missing_orders)})], ignore_index=True)
     # sort by input order
+    print(counts_by_taxa)
+    print(tax_level)
     counts_by_taxa.loc[:,'tax_level'] = pd.Categorical(counts_by_taxa[tax_level], categories=input_taxa[tax_level], ordered=True)
     counts_by_taxa = counts_by_taxa.sort_values('tax_level').reset_index(drop=True)
 
