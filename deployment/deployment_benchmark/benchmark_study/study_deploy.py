@@ -100,7 +100,8 @@ def expand_input_data(all_input_data: pd.DataFrame, ncbi_wrapper: NCBITaxonomist
     input_tax_df = input_tax_df.drop_duplicates(subset=['taxid'])
 
     input_tax_df = pd.concat([input_tax_df, pd.DataFrame({'taxid': [0], 'order': ['unclassified'], 'family': ['unclassified'], 'genus': ['unclassified']})], ignore_index=True)
-
+    input_tax_df = input_tax_df.replace({np.nan: 'unclassified'})
+    
     return input_tax_df
 
 def run_data_retrieval(study_output_filepath: str, data_set_divide: int, ncbi_wrapper: NCBITaxonomistWrapper, input_tax_df: pd.DataFrame, tax_level_to_use: str, taxids_to_use: pd.DataFrame):
