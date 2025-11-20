@@ -326,8 +326,8 @@ if __name__ == "__main__":
     model_composition, X_train_composition, X_test_composition, y_test_composition = composition_modeller.train_model()
     crosshit_modeller.train_model()\
 
-    recall_modeller.plot_eval(model_recall, X_test_recall, Y_test_recall, analysis_output_filepath)
-    composition_modeller.eval_and_plot(model_composition, X_test_composition, y_test_composition, analysis_output_filepath)
+    recall_modeller.plot_eval(X_test_recall, Y_test_recall, analysis_output_filepath)
+    composition_modeller.eval_and_plot(X_test_composition, y_test_composition, analysis_output_filepath, X_train=X_train_composition)
 
     #### Cross-Hit Analysis
     test_results_df, summary_results_df, trash_results_df, cross_hit_results_df = compound_eda_function(

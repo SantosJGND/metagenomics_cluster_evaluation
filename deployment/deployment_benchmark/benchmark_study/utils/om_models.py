@@ -240,9 +240,9 @@ class RecallModeller:
         return r2_scores, mse_scores
     
 
-    def plot_eval(self, model, X_test, Y_test, analysis_output_filepath):
+    def plot_eval(self, X_test, Y_test, analysis_output_filepath):
         import matplotlib.pyplot as plt
-        Y_pred = model.predict(X_test)
+        Y_pred = self.model.predict(X_test)
         differences = Y_test.values - Y_pred
         avg_differences = differences.mean(axis=0)
 
@@ -464,12 +464,12 @@ class CompositionModeller:
         plt.tight_layout()
         plt.savefig(f"{output_directory}/shap_interaction_dendrogram.png")
     
-    def eval_and_plot(self, model, X_test, y_test, output_directory, X_train=None):
-        report, cm = self.evaluate_model(model, X_test, y_test)
-        self.plot_eval(model, X_test, y_test, output_directory)
+    def eval_and_plot(self, X_test, y_test, output_directory, X_train=None):
+        report, cm = self.evaluate_model(self.model, X_test, y_test)
+        self.plot_eval(self.model, X_test, y_test, output_directory)
         if X_train is not None:
-            self.shap_eval_plot(model, X_train, X_test, output_directory)
-            self.shap_interaction_plot(model, X_train, X_test, output_directory)
+            self.shap_eval_plot(self.model, X_train, X_test, output_directory)
+            self.shap_interaction_plot(self.model, X_train, X_test, output_directory)
         return report, cm
 
 
