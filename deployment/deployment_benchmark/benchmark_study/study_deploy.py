@@ -392,6 +392,7 @@ if __name__ == "__main__":
     plt.axvline(0, color='red', linestyle='--', label='No Improvement')
     plt.legend()
     plt.savefig(os.path.join(analysis_output_filepath, "recall_improvement_histogram.png"))
+    plt.close()
 
     melted_df = data_set_summary_results.melt(id_vars=['sample'], value_vars=['recall_raw', 'recall_cov_filtered' ,'clade_recall', 'recall_filtered_leaves'], var_name='Metric', value_name='Value')
     sns.boxplot(x='Metric', y='Value', data=melted_df)
