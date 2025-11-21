@@ -11,6 +11,7 @@ import os
 import pandas as pd
 import time
 import dotenv
+from typing import Tuple
 dotenv.load_dotenv()
 
 Entrez.email = os.getenv("NCBI_EMAIL", None)
@@ -208,7 +209,7 @@ class NCBITaxonomistWrapper:
         lineage = sorted(lineage.items(), key=lambda x: x[1]['level'])
         return [(rank, info['name']) for rank, info in lineage]
     
-    def compare_lineages_relative(self, taxid1: int, taxid2: int) -> tuple[float, Optional[str]]:
+    def compare_lineages_relative(self, taxid1: int, taxid2: int) -> Tuple[float, Optional[str]]:
         """
         Compare two taxids based on their lineages.
         Return a similarity score between 0 and 1, and the deepest common taxonomic level name.
@@ -279,7 +280,7 @@ class NCBIlineageParser:
     def get_species(self) -> Optional[str]:
         return self.get_level('species')
 
-def compare_lineages(lineage1: Optional[str], lineage2: Optional[str]) -> tuple[float, Optional[str]]:
+def compare_lineages(lineage1: Optional[str], lineage2: Optional[str]) -> Tuple[float, Optional[str]]:
     """
     Compare two lineages. Split by ';' and compare each level.
     add points for each match, normalize by the length of the longer lineage.
