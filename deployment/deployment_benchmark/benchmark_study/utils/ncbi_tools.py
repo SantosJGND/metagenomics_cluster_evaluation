@@ -97,7 +97,7 @@ class NCBITaxonomistWrapper:
                 output = stream.read()
                 lineage_dict_update = self.parse_lineages_output(output)
                 lineage_dict.update(lineage_dict_update)
-                time.sleep(5)
+                time.sleep(3)
 
         self.lineages.update(lineage_dict)
 
@@ -133,6 +133,7 @@ class NCBITaxonomistWrapper:
                 output = stream.read()
                 lineage_dict_update = self.parse_lineages_output(output)
                 self.lineages.update(lineage_dict_update)
+                time.sleep(3)
 
         still_missing = set(taxids) - set(self.lineages.keys())
         if still_missing:
