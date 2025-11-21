@@ -373,7 +373,9 @@ if __name__ == "__main__":
     logger.info(f"Number of test datasets analysed: {nsets_analysed}")
 
     summary_stats_precision = ['overall_precision_raw','fuzzy_precision_raw', 'fuzzy_precision_cov_filtered', 'clade_precision_full', 'clade_precision_post']
-
+    df = data_set_summary_results[summary_stats_precision]
+    stats = df.describe().T
+    stats.to_csv(os.path.join(analysis_output_filepath, "precision_summary_statistics.tsv"), sep="\t")
 
     plt.figure(figsize=(10, 6))
     sns.histplot(test_results_df['overall_precision'], bins=20, kde=True)
@@ -381,10 +383,11 @@ if __name__ == "__main__":
     plt.xlim(0, 2)
     plt.ylabel('Frequency')
     plt.title('Distribution of Overall Precision Across Test Datasets')
+    plt.tight_layout()
     plt.savefig(os.path.join(analysis_output_filepath, "overall_precision_histogram.png"))
     plt.close()
 
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(12, 8))
     melted_df = data_set_summary_results.melt(id_vars=['sample'], value_vars=['overall_precision_raw','fuzzy_precision_raw', 'fuzzy_precision_cov_filtered', 'clade_precision_full', 'clade_precision_post'], var_name='Metric', value_name='Value')
     sns.boxplot(x='Metric', y='Value', data=melted_df)
     plt.title('Comparison of Precision Metrics Across Datasets')
@@ -392,18 +395,18 @@ if __name__ == "__main__":
     plt.xlabel('Metric')
     plt.ylim(0, 3)
     plt.xticks(rotation=45)
-
+    plt.tight_layout()
     plt.savefig(os.path.join(analysis_output_filepath, "precision_metrics_boxplot.png"))
     plt.close()
 
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(12, 8))
     melted_df = data_set_summary_results.melt(id_vars=['sample'], value_vars=['overall_precision_raw','fuzzy_precision_raw', 'fuzzy_precision_cov_filtered', 'clade_precision_full', 'clade_precision_post'], var_name='Metric', value_name='Value')
     sns.histplot(data=melted_df, x='Value', hue='Metric', element='step', stat='density', common_norm=False, bins=20)
     plt.title('Comparison of Precision Metrics Across Datasets')
     plt.ylabel('Precision')
     plt.xlabel('Metric')
     plt.xticks(rotation=45)
-
+    plt.tight_layout()
     plt.savefig(os.path.join(analysis_output_filepath, "precision_metrics_histogram.png"))
     plt.close()
 
@@ -418,6 +421,7 @@ if __name__ == "__main__":
     plt.ylabel('Frequency')
     plt.axvline(0, color='red', linestyle='--', label='No Improvement')
     plt.legend()
+    plt.tight_layout()
     plt.savefig(os.path.join(analysis_output_filepath, "recall_improvement_histogram.png"))
     plt.close()
 
@@ -428,7 +432,7 @@ if __name__ == "__main__":
     plt.ylabel('Recall')
     plt.xlabel('Metric')
     plt.xticks(rotation=45)
-
+    plt.tight_layout()
     plt.savefig(os.path.join(analysis_output_filepath, "recall_metrics_boxplot.png"))
     plt.close()
 
@@ -440,19 +444,75 @@ if __name__ == "__main__":
     precisions_df.loc[:, 'Prob_Find_true_clade_full'] = precisions_df['clade_recall'] * precisions_df['clade_precision_full']
 
     precisions_df_melt = precisions_df.melt(id_vars=['sample'], value_vars=['Prob_Find_any', 'Prob_Find_any_cov', 'Prob_Find_true', 'Prob_Find_true_clade_full'], var_name='Metric', value_name='Value')
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(12, 8))
     sns.boxplot(x='Metric', y='Value', data=precisions_df_melt)
     plt.title('Comparison of Probability Metrics Across Datasets')
     plt.ylabel('Probability')
     plt.xlabel('Metric')
     plt.xticks(rotation=45)
+    plt.tight_layout()
     plt.savefig(os.path.join(analysis_output_filepath, "probability_metrics_boxplot.png"))
     plt.close()
 
-    plt.figure(figsize=(10, 6))
-    plt.ylabel('Clade Precision (Post)')
+    plt.figure(figsize=(10, 8))
+    plt.ylabel('Raw Precision (Post)')
     sns.boxplot(x=tax_level_to_use, y='raw_pred_accuracy', data=summary_results_df)
     plt.xticks(rotation=45)
     plt.grid(True)
+    plt.tight_layout()
     plt.savefig(os.path.join(analysis_output_filepath, "clade_precision.png"))
     plt.close()
+
+    def composition_summary(composition_df: pd.DataFrame):
+        summary_list = []
+        for tax_level in composition_df['tax_level'].unique():
+            subset = composition_df[composition_df['tax_level'] == tax_level]
+            mean_values = subset.drop(columns=['taxid', 'tax_level']).mean()
+            mean_values = pd.DataFrame(mean_values).T
+            
+            std_values = subset.drop(columns=['taxid', 'tax_level']).std()
+            mean_values.insert(0, 'tax_level', tax_level)
+            summary_list.append(mean_values)
+        summary_list = pd.concat(summary_list, ignore_index=True)
+        summary_list.set_index('tax_level', inplace=True)
+        return summary_list
+
+    cross_hit_composition_summary_df = composition_summary(cross_hit_results_df)
+    # sort by tax_level - columns and index
+    cross_hit_composition_summary_df = cross_hit_composition_summary_df.sort_index()
+    cross_hit_composition_summary_df = cross_hit_composition_summary_df.reindex(sorted(cross_hit_composition_summary_df.columns), axis=1)
+    # plot heatmap
+    plt.figure(figsize=(12, 8))
+    sns.heatmap(cross_hit_composition_summary_df, cmap='viridis', annot=True, fmt=".2f")
+    plt.title('Average Cross-Hit Composition by Tax Level')
+    plt.xlabel('Taxa')
+    plt.ylabel('Tax Level')
+    plt.show()
+
+
+    def composition_summary(composition_df: pd.DataFrame):
+        summary_list = []
+        for tax_level in composition_df['tax_level'].unique():
+            subset = composition_df[composition_df['tax_level'] == tax_level]
+            mean_values = subset.drop(columns=['taxid', 'tax_level']).mean()
+            mean_values = pd.DataFrame(mean_values).T
+            
+            std_values = subset.drop(columns=['taxid', 'tax_level']).std()
+            mean_values.insert(0, 'tax_level', tax_level)
+            summary_list.append(mean_values)
+        summary_list = pd.concat(summary_list, ignore_index=True)
+        summary_list.set_index('tax_level', inplace=True)
+        return summary_list
+
+    trash_composition_summary_df = composition_summary(trash_results_df)
+
+    # sort by tax_level - columns and index
+    trash_composition_summary_df = trash_composition_summary_df.sort_index()
+    trash_composition_summary_df = trash_composition_summary_df.reindex(sorted(trash_composition_summary_df.columns), axis=1)
+    # plot heatmap
+    plt.figure(figsize=(12, 8))
+    sns.heatmap(trash_composition_summary_df, cmap='viridis', annot=True, fmt=".4f")
+    plt.title('Average Trash Composition by Tax Level')
+    plt.xlabel('Taxa')
+    plt.ylabel('Tax Level')
+    plt.show()
