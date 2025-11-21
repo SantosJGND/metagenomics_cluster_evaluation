@@ -312,6 +312,8 @@ if __name__ == "__main__":
     #data_set_divide = 5
 
     #### output logger to file
+    os.makedirs(analysis_output_filepath, exist_ok=True)
+
     logging.basicConfig(level=logging.INFO, filename=os.path.join(analysis_output_filepath, "study_deploy.log"), filemode='w',
                         format='%(asctime)s - %(levelname)s - %(message)s')
     logger = logging.getLogger(__name__)
@@ -322,7 +324,6 @@ if __name__ == "__main__":
     #### Define output files
     output_lineages = os.path.join(study_output_filepath, "lineages.tsv")
     output_db = os.path.join(study_output_filepath, "taxa.db")
-    os.makedirs(analysis_output_filepath, exist_ok=True)
 
     #### Load taxid plan
     taxid_plan = pd.read_csv(taxid_plan_filepath, sep="\t")
