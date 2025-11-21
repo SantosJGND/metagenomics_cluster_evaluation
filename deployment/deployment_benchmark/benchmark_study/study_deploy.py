@@ -10,6 +10,8 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
 
+import logging
+
 def retrieve_simulation_input(study_output_filepath: str) -> pd.DataFrame:
     input_files = []
     folders = [f for f in os.listdir(study_output_filepath) if os.path.isdir(os.path.join(study_output_filepath, f))]
@@ -285,7 +287,7 @@ def get_args():
     parser.add_argument("--threshold", type=float, default=0.3, help="Threshold value for model")
     parser.add_argument("--taxa_threshold", type=float, default=0.02, help="Taxa threshold for filtering")
     parser.add_argument("--tax_level_to_use", type=str, default='order', help="Taxonomic level to use")
-    parser.add_argument("--data_set_divide", type=int, default=5, help="Data set divide for training/testing")
+    parser.add_argument("--data_set_divide", type=int, default=10, help="Data set divide for training/testing")
 
     return parser.parse_args()
 
@@ -309,6 +311,14 @@ if __name__ == "__main__":
     #tax_level_to_use = 'order'
     #data_set_divide = 5
 
+    #### output logger to file
+    logging.basicConfig(level=logging.INFO, filename=os.path.join(analysis_output_filepath, "study_deploy.log"), filemode='w',
+                        format='%(asctime)s - %(levelname)s - %(message)s')
+    logger = logging.getLogger(__name__)
+    logger.info("Starting model deployment analysis")
+    logger.info(f"Study output filepath: {study_output_filepath}")
+    logger.info(f"Taxid plan filepath: {taxid_plan_filepath}")
+    logger.info(f"Analysis output filepath: {analysis_output_filepath}")
     #### Define output files
     output_lineages = os.path.join(study_output_filepath, "lineages.tsv")
     output_db = os.path.join(study_output_filepath, "taxa.db")
@@ -325,10 +335,12 @@ if __name__ == "__main__":
 
     input_tax_df = expand_input_data(all_input_data, ncbi_wrapper, taxid_plan)
     taxids_to_use = establish_taxids_to_use(study_output_filepath, ncbi_wrapper, tax_level_to_use= tax_level_to_use, min_tax_count= taxa_threshold, normalize = True)
+    logger.info(f"Number of taxids to use at level {tax_level_to_use}: {taxids_to_use.shape[0]}")
 
     ### Run data retrieval  
     trainning_results_df, prediction_trainning_results_df, recall_trainning_results = run_data_retrieval(study_output_filepath, data_set_divide, ncbi_wrapper, input_tax_df, tax_level_to_use, taxids_to_use)
-
+    ndata_sets = trainning_results_df['data_set'].nunique()
+    logger.info(f"Number of training datasets retrieved: {ndata_sets}")
     ### Models
     from utils.om_models import RecallModeller, CompositionModeller, CrossHitModeller
     recall_modeller= RecallModeller(recall_trainning_results= recall_trainning_results, data_set_divide= data_set_divide)
@@ -357,6 +369,8 @@ if __name__ == "__main__":
 
     data_set_summary_results = summary_results_df.copy()
     data_set_summary_results = data_set_summary_results.drop_duplicates(subset=['sample']).copy()
+    nsets_analysed = summary_results_df['sample'].nunique()
+    logger.info(f"Number of test datasets analysed: {nsets_analysed}")
 
     summary_stats_precision = ['overall_precision_raw','fuzzy_precision_raw', 'fuzzy_precision_cov_filtered', 'clade_precision_full', 'clade_precision_post']
 
@@ -373,7 +387,7 @@ if __name__ == "__main__":
     plt.figure(figsize=(12, 6))
     melted_df = data_set_summary_results.melt(id_vars=['sample'], value_vars=['overall_precision_raw','fuzzy_precision_raw', 'fuzzy_precision_cov_filtered', 'clade_precision_full', 'clade_precision_post'], var_name='Metric', value_name='Value')
     sns.boxplot(x='Metric', y='Value', data=melted_df)
-    plt.title('Comparison of Precision Metrics Across Datasets - Bacteria - no Filter (prinseq++ or mSamtools)')
+    plt.title('Comparison of Precision Metrics Across Datasets')
     plt.ylabel('Precision')
     plt.xlabel('Metric')
     plt.ylim(0, 3)
@@ -416,4 +430,29 @@ if __name__ == "__main__":
     plt.xticks(rotation=45)
 
     plt.savefig(os.path.join(analysis_output_filepath, "recall_metrics_boxplot.png"))
+    plt.close()
+
+    precisions_df = summary_results_df[['sample', 'recall_raw', 'recall_cov_filtered', 'clade_recall','fuzzy_precision_raw', 'fuzzy_precision_cov_filtered','overall_precision_raw', 'clade_precision_full', 'clade_precision_post']].drop_duplicates()
+
+    precisions_df.loc[:, 'Prob_Find_any'] = precisions_df['recall_raw'] * precisions_df['fuzzy_precision_raw']
+    precisions_df.loc[:, 'Prob_Find_any_cov'] = precisions_df['recall_cov_filtered'] * precisions_df['fuzzy_precision_cov_filtered']
+    precisions_df.loc[:, 'Prob_Find_true'] = precisions_df['recall_raw'] * precisions_df['overall_precision_raw']
+    precisions_df.loc[:, 'Prob_Find_true_clade_full'] = precisions_df['clade_recall'] * precisions_df['clade_precision_full']
+
+    precisions_df_melt = precisions_df.melt(id_vars=['sample'], value_vars=['Prob_Find_any', 'Prob_Find_any_cov', 'Prob_Find_true', 'Prob_Find_true_clade_full'], var_name='Metric', value_name='Value')
+    plt.figure(figsize=(12, 6))
+    sns.boxplot(x='Metric', y='Value', data=precisions_df_melt)
+    plt.title('Comparison of Probability Metrics Across Datasets')
+    plt.ylabel('Probability')
+    plt.xlabel('Metric')
+    plt.xticks(rotation=45)
+    plt.savefig(os.path.join(analysis_output_filepath, "probability_metrics_boxplot.png"))
+    plt.close()
+
+    plt.figure(figsize=(10, 6))
+    plt.ylabel('Clade Precision (Post)')
+    sns.boxplot(x=tax_level_to_use, y='raw_pred_accuracy', data=summary_results_df)
+    plt.xticks(rotation=45)
+    plt.grid(True)
+    plt.savefig(os.path.join(analysis_output_filepath, "clade_precision.png"))
     plt.close()

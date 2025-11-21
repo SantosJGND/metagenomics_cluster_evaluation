@@ -66,7 +66,7 @@ class NCBITaxonomistWrapper:
         return cmd
     
 
-    def split_taxids(self, taxids: List[int], chunk_size=50) -> Generator[List[int]]:
+    def split_taxids(self, taxids: List[int], chunk_size=50) -> Generator[List[int], None, None]:
         """ Split a list of taxids into chunks of specified size. """
         for i in range(0, len(taxids), chunk_size):
             yield taxids[i:i + chunk_size]
