@@ -91,7 +91,7 @@ class OverlapManager:
             distance_matrix = pd.read_csv(self.distance_matrix_filepath, sep="\t", index_col=0)
             self.distance_mat = pd.read_csv(self.distance_matrix_filepath, sep="\t", index_col=0)
             merged_stats_file = os.path.join(os.path.dirname(self.output_dir), "output", "merged_coverage_statistics.tsv")
-            matched = pd.read_csv(matched_assemblies_file, sep="\t") if os.path.exists(matched_assemblies_file) else pd.DataFrame()
+            matched = pd.read_csv(matched_assemblies_file, sep="\t")
             matched['assembly_file'] = matched['assembly_file'].apply(lambda x: os.path.basename(x))
             matched = matched.sort_values(by=['total_uniq_reads'], ascending=False).drop_duplicates(subset=['assembly_accession'], keep= 'first')
             self.m_stats_matrix = pd.read_csv(merged_stats_file, sep="\t").rename(columns={"#rname": "assembly_accession"}) if os.path.exists(merged_stats_file) else pd.DataFrame()

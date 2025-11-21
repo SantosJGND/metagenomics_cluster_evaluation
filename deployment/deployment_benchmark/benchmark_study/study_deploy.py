@@ -115,6 +115,7 @@ def run_data_retrieval(study_output_filepath: str, data_set_divide: int, ncbi_wr
         for data_set_name in trainning_folders:
 
             overlap_manager = OverlapManager(os.path.join(study_output_filepath, f"{data_set_name}", "clustering"))
+            
             result_df = data_set_traversal_with_precision(data_set_name, study_output_filepath, ncbi_wrapper, overlap_manager, taxids_to_use, tax_level=tax_level_to_use)
             prediction_matrix = cross_hit_prediction_matrix(data_set_name, study_output_filepath, ncbi_wrapper, overlap_manager, taxids_to_use, tax_level=tax_level_to_use)
             m_stats_stats_matrix = get_m_stats_matrix(data_set_name, study_output_filepath, ncbi_wrapper, overlap_manager)
