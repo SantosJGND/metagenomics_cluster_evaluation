@@ -445,15 +445,19 @@ class CompositionModeller:
         sns.heatmap(interaction_df, cmap="viridis")
         plt.title("Mean absolute SHAP interaction values")
         plt.savefig(f"{output_directory}/shap_interaction_heatmap.png")
+        plt.close()
     
         distance_matrix = 1 - interaction_df
         # fill diagonal with 0
         np.fill_diagonal(distance_matrix.values, 0)
+
         # create tree from distance matrix
         from scipy.cluster.hierarchy import linkage, dendrogram
         from scipy.spatial.distance import squareform
         import matplotlib.pyplot as plt
-
+        # remove infinite values
+        distance_matrix.replace([np.inf, -np.inf], np.nan, inplace=True)
+        distance_matrix.fillna(distance_matrix.max().max(), inplace=True)
         #condensed_dist = squareform(distance_matrix.fillna(0).values)
         Z = linkage(distance_matrix, method='average')
         plt.figure(figsize=(6, 7))
@@ -463,6 +467,7 @@ class CompositionModeller:
         plt.ylabel("Features")
         plt.tight_layout()
         plt.savefig(f"{output_directory}/shap_interaction_dendrogram.png")
+        plt.close()
     
     def eval_and_plot(self, X_test, y_test, output_directory, X_train=None):
         report, cm = self.evaluate_model(self.model, X_test, y_test)

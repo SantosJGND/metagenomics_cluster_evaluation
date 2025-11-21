@@ -407,6 +407,7 @@ if __name__ == "__main__":
     plt.savefig(os.path.join(analysis_output_filepath, "recall_improvement_histogram.png"))
     plt.close()
 
+    plt.figure(figsize=(12, 6))
     melted_df = data_set_summary_results.melt(id_vars=['sample'], value_vars=['recall_raw', 'recall_cov_filtered' ,'clade_recall', 'recall_filtered_leaves'], var_name='Metric', value_name='Value')
     sns.boxplot(x='Metric', y='Value', data=melted_df)
     plt.title('Comparison of Recall Metrics Across Datasets')

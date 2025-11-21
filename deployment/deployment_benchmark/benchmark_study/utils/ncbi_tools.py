@@ -4,13 +4,12 @@ from Bio import Entrez
 import os
 import subprocess
 from dataclasses import dataclass
-from typing import Tuple, Optional
 # read email from local .env file
-from typing import List, Optional
+from typing import List, Optional, Generator
 import json
 import os
 import pandas as pd
-
+import time
 import dotenv
 dotenv.load_dotenv()
 
@@ -42,6 +41,7 @@ class NCBITaxonomistWrapper:
         self.db_path = db
         self.temp_dir = temp_dir
         self.lineages: dict[int, dict[str, dict[str, str]]] = {}
+        self.max_fetch = 50 # max taxids to fetch at once
 
     def retrieve_lineages_cmd_local(self, taxids: List[int]) -> str:
         """
@@ -64,6 +64,13 @@ class NCBITaxonomistWrapper:
         print("Importing taxids from NCBI:", cmd)
 
         return cmd
+    
+
+    def split_taxids(self, taxids: List[int], chunk_size=50) -> Generator[List[int]]:
+        """ Split a list of taxids into chunks of specified size. """
+        for i in range(0, len(taxids), chunk_size):
+            yield taxids[i:i + chunk_size]
+
 
     def resolve_lineages(self, taxids: List[int]) -> None:
         """
@@ -84,12 +91,13 @@ class NCBITaxonomistWrapper:
         print("Missing taxids after local retrieval:", missing)
         if missing:
             print(f"Missing taxids: {missing}. Trying to import them from NCBI...")
-            cmd = self.retrieve_lineages_cmd_import(list(missing))
-
-            stream = os.popen(cmd)
-            output = stream.read()
-            lineage_dict_update = self.parse_lineages_output(output)
-            lineage_dict.update(lineage_dict_update)
+            for taxid_chunk in self.split_taxids(list(missing), chunk_size=self.max_fetch):
+                cmd = self.retrieve_lineages_cmd_import(list(taxid_chunk))
+                stream = os.popen(cmd)
+                output = stream.read()
+                lineage_dict_update = self.parse_lineages_output(output)
+                lineage_dict.update(lineage_dict_update)
+                time.sleep(5)
 
         self.lineages.update(lineage_dict)
 
@@ -118,12 +126,13 @@ class NCBITaxonomistWrapper:
         missing = set(taxids) - set(self.lineages.keys())
         if missing:
             print(f"Missing taxids: {missing}. Trying to import them from NCBI...")
-            cmd = self.retrieve_lineages_cmd_import(list(missing))
+            for taxid_chunk in self.split_taxids(list(missing), chunk_size=self.max_fetch):
+                cmd = self.retrieve_lineages_cmd_import(list(taxid_chunk))
 
-            stream = os.popen(cmd)
-            output = stream.read()
-            lineage_dict_update = self.parse_lineages_output(output)
-            self.lineages.update(lineage_dict_update)
+                stream = os.popen(cmd)
+                output = stream.read()
+                lineage_dict_update = self.parse_lineages_output(output)
+                self.lineages.update(lineage_dict_update)
 
         still_missing = set(taxids) - set(self.lineages.keys())
         if still_missing:
