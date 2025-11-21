@@ -110,12 +110,15 @@ def run_data_retrieval(study_output_filepath: str, data_set_divide: int, ncbi_wr
     trainning_results = []
     prediction_trainning_results = []
     recall_trainning_results = []
-    try:
         
-        for data_set_name in trainning_folders:
+    for data_set_name in trainning_folders:
+        try:
 
             overlap_manager = OverlapManager(os.path.join(study_output_filepath, f"{data_set_name}", "clustering"))
-            
+
+            if overlap_manager.m_stats_matrix.empty:
+                continue
+
             result_df = data_set_traversal_with_precision(data_set_name, study_output_filepath, ncbi_wrapper, overlap_manager, taxids_to_use, tax_level=tax_level_to_use)
             prediction_matrix = cross_hit_prediction_matrix(data_set_name, study_output_filepath, ncbi_wrapper, overlap_manager, taxids_to_use, tax_level=tax_level_to_use)
             m_stats_stats_matrix = get_m_stats_matrix(data_set_name, study_output_filepath, ncbi_wrapper, overlap_manager)
@@ -128,12 +131,12 @@ def run_data_retrieval(study_output_filepath: str, data_set_divide: int, ncbi_wr
                 prediction_trainning_results.append(prediction_matrix)
             if not recall_stats.empty:
                 recall_trainning_results.append(recall_stats)
+        except Exception as e:
+            print(f"s: {e}")
+            print(f"Processing {data_set_name}")
+            import traceback
+            traceback.print_exc()
 
-    except Exception as e:
-        print(f"Error processing training datasets: {e}")
-        print(f"Processing {data_set_name}")
-        import traceback
-        traceback.print_exc()
 
     trainning_results_df = pd.concat(trainning_results, ignore_index=True)
     prediction_trainning_results_df = pd.concat(prediction_trainning_results, ignore_index=True)
