@@ -109,7 +109,7 @@ class OverlapManager:
             for n in self.all_nodes:
                 if n not in self.tree:
                     self.tree.add_node(n)
-        except pd.errors.EmptyDataError:
+        except Exception as e:
             
             import traceback
             traceback.print_exc()
