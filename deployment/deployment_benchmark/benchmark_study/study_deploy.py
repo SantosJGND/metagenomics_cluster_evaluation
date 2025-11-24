@@ -350,7 +350,7 @@ if __name__ == "__main__":
 
     model_recall, X_test_recall, Y_test_recall =recall_modeller.train_model()
     model_composition, X_train_composition, X_test_composition, y_test_composition = composition_modeller.train_model()
-    crosshit_modeller.train_model()\
+    crosshit_modeller.train_model()
 
     recall_modeller.plot_eval(X_test_recall, Y_test_recall, analysis_output_filepath)
     composition_modeller.eval_and_plot(X_test_composition, y_test_composition, analysis_output_filepath, X_train=X_train_composition)
@@ -367,6 +367,11 @@ if __name__ == "__main__":
         composition_modeller,
         crosshit_modeller
     )
+
+
+    test_results_df.to_csv(os.path.join(analysis_output_filepath, "test_datasets_overall_precision.tsv"), sep="\t", index=False)
+    trash_results_df.to_csv(os.path.join(analysis_output_filepath, "test_datasets_trash_composition.tsv"), sep="\t", index=False)
+    cross_hit_results_df.to_csv(os.path.join(analysis_output_filepath, "test_datasets_cross_hit_composition.tsv"), sep="\t", index=False)
 
     data_set_summary_results = summary_results_df.copy()
     data_set_summary_results = data_set_summary_results.drop_duplicates(subset=['sample']).copy()
