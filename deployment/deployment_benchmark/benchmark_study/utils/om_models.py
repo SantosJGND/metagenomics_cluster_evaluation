@@ -142,7 +142,7 @@ def cross_hit_prediction_matrix(data_set_name,
 from utils.overlap_manager_stats import get_subset_composition_counts
 from utils.stats import shannon_diversity_from_list, skewness, kurtosis
 
-def predict_recall_cutoff_vars(data_set_divide:int, data_set_name: str, m_stats_stats_matrix: pd.DataFrame, input_tax_df: pd.DataFrame):
+def predict_recall_cutoff_vars(data_set_divide:int, data_set_name: str, m_stats_stats_matrix: pd.DataFrame, input_tax_df: pd.DataFrame, tax_level: str = "order") -> pd.DataFrame:
     """
     Predict recall at various cutoffs and other composition statistics.
     """
@@ -152,7 +152,7 @@ def predict_recall_cutoff_vars(data_set_divide:int, data_set_name: str, m_stats_
     last_best_match_index = best_match_indices[-1] + 1 if best_match_indices else -1 
     last_best_match_relindex = (last_best_match_index) / len(m_stats_stats_matrix) if len(m_stats_stats_matrix) > 0 else 0.0
 
-    composition = get_subset_composition_counts(m_stats_stats_matrix, input_tax_df, tax_level="order")[['tax_level', 'proportion']].set_index('tax_level').T
+    composition = get_subset_composition_counts(m_stats_stats_matrix, input_tax_df, tax_level=tax_level)[['tax_level', 'proportion']].set_index('tax_level').T
 
 
     tax_diversity_shannon = shannon_diversity_from_list(m_stats_stats_matrix['order'].dropna().tolist())
@@ -445,19 +445,15 @@ class CompositionModeller:
         sns.heatmap(interaction_df, cmap="viridis")
         plt.title("Mean absolute SHAP interaction values")
         plt.savefig(f"{output_directory}/shap_interaction_heatmap.png")
-        plt.close()
     
         distance_matrix = 1 - interaction_df
         # fill diagonal with 0
         np.fill_diagonal(distance_matrix.values, 0)
-
         # create tree from distance matrix
         from scipy.cluster.hierarchy import linkage, dendrogram
         from scipy.spatial.distance import squareform
         import matplotlib.pyplot as plt
-        # remove infinite values
-        distance_matrix.replace([np.inf, -np.inf], np.nan, inplace=True)
-        distance_matrix.fillna(distance_matrix.max().max(), inplace=True)
+
         #condensed_dist = squareform(distance_matrix.fillna(0).values)
         Z = linkage(distance_matrix, method='average')
         plt.figure(figsize=(6, 7))
@@ -467,7 +463,6 @@ class CompositionModeller:
         plt.ylabel("Features")
         plt.tight_layout()
         plt.savefig(f"{output_directory}/shap_interaction_dendrogram.png")
-        plt.close()
     
     def eval_and_plot(self, X_test, y_test, output_directory, X_train=None):
         report, cm = self.evaluate_model(self.model, X_test, y_test)
@@ -718,7 +713,7 @@ def predict_data_set_clades(data_set_name, m_stats_stats_matrix, overlap_manager
         results.extend(root_results)
 
     if len(results) == 0:
-        return pd.DataFrame()
+        return pd.DataFrame(columns = ['data_set', 'node', 'n_leaves', 'leaves', 'best_taxid_match', 'node_precision', 'node_taxids'])
 
     results_df = pd.DataFrame(results)
 

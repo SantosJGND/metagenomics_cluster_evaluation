@@ -186,8 +186,8 @@ class OverlapManager:
         if distance_matrix.empty is True:
             return Phylo.BaseTree.Tree(rooted="True")
 
-        if distance_matrix.shape[0] <= 1:
-            tree = constructor.upgma(distmat)
+        if distance_matrix.shape[0] < 2:
+            tree = constructor.nj(distmat)
         else:
             tree = constructor.upgma(distmat)
 
@@ -230,7 +230,7 @@ class OverlapManager:
             
             distance_matrix = distance_matrix.loc[distance_matrix.index.isin(nodes_to_filter), distance_matrix.columns.isin(nodes_to_filter)]
             
-            if distance_matrix.shape[0] < 2:
+            if distance_matrix.shape[0] < 1:
                 return pd.DataFrame()
 
             distance_matrix.index = distance_matrix.index.map(str)
@@ -245,8 +245,16 @@ class OverlapManager:
         """
         if os.path.exists(self.distance_matrix_filepath):
             distance_matrix = self.read_distance_matrix()
-            if distance_matrix.empty is True or distance_matrix.shape[0] < 2:
+
+            
+            if distance_matrix.empty is True:
                 return
+            if distance_matrix.shape[0] == 1:
+                self.leaves = list(distance_matrix.index)
+                self.all_nodes = list(distance_matrix.index)
+                self.root_nodes = list(distance_matrix.index)
+                self.tree = nx.DiGraph()
+
             proximity_matrix = 1 - distance_matrix
             weighted_proximity_matrix = self.weighted_matrix(proximity_matrix)
             weighted_distance_matrix = 1 - weighted_proximity_matrix
