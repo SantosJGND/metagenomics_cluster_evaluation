@@ -582,10 +582,9 @@ def cross_hit_prediction(data_set_name,
     prediction_matrix = cross_hit_prediction_matrix(data_set_name, study_output_filepath, ncbi_wrapper, overlap_manager, tax_df, tax_level=tax_level)
     
 
-    if prediction_matrix.empty:
-        return pd.DataFrame()
-    if len(overlap_manager.leaves) == 0:
-        return pd.DataFrame()
+    if prediction_matrix.empty or len(overlap_manager.leaves) == 0:
+        return pd.DataFrame(columns=['leaf', 'is_trash', 'prob_best_match', 'pred_best_match'])
+
     
     X_pred = prediction_matrix.drop(columns=['leaf', 'is_trash'])
     pred_stats_cols = ['coverage', 'covbases', 'meanmapq', 'error_rate', 'max_shared']

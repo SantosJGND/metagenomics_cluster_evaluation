@@ -33,6 +33,20 @@ def get_args():
         help="Directory to store mapping references."
     )
 
+    retrieve_parser.add_argument(
+        "--include_term",
+        type=str,
+        default=None,
+        help="Term to include in NCBI search."
+    )
+    retrieve_parser.add_argument(
+        "--exclude_term",
+        type=str,
+        default=None,
+        help="Term to exclude from NCBI search."
+    )
+
+
     # Subcommand: check
     check_parser = subparsers.add_parser("check", help="Check if mapping ids can be retrieved.")
     check_parser.add_argument(
@@ -47,6 +61,18 @@ def get_args():
         type=str,
         default="assembly_assessment.tsv",
         help="Path to the assessment file to check assemblies."
+    )
+    check_parser.add_argument(
+        "--include_term",
+        type=str,
+        default=None,
+        help="Term to include in NCBI search."
+    )
+    check_parser.add_argument(
+        "--exclude_term",
+        type=str,
+        default=None,
+        help="Term to exclude from NCBI search."
     )
 
     return parser.parse_args()
@@ -80,6 +106,8 @@ def check_assemblies_exist(args):
     """
 
     input_table = args.input_table
+    include_term = args.include_term if hasattr(args, 'include_term') else None
+    exclude_term = args.exclude_term if hasattr(args, 'exclude_term') else None
     df = pd.read_csv(input_table, sep='\t')
     taxid_col = False
     if 'taxid' in df.columns:
@@ -110,7 +138,7 @@ def check_assemblies_exist(args):
     if taxid_col is False and accid_col is False:
         raise ValueError("The classification output file must contain a taxonomic ID column [taxid, taxID or taxon] or an accession column [assembly_accession, accession, accID or accid].")
 
-    def check_assembly_exists(row, taxid_col= False, accid_col=False):
+    def check_assembly_exists(row, taxid_col= False, accid_col=False, include_term=None, exclude_term=None):
         """
         Check if the assembly for the given taxid exists.
         """
@@ -124,7 +152,8 @@ def check_assemblies_exist(args):
 
         passport = Passport(taxid = taxid, accession = accid)
         ncbi_tools = NCBITools()
-        reference_data = ncbi_tools.query_sequence_databases(passport, include_term='chromosome', exclude_term="plasmid")
+
+        reference_data = ncbi_tools.query_sequence_databases(passport, include_term=include_term, exclude_term=exclude_term)
 
         row['assembly_accession'] = reference_data.accession
         row['description'] = reference_data.description
@@ -134,7 +163,7 @@ def check_assemblies_exist(args):
 
         return row
 
-    df = df.apply(lambda row: check_assembly_exists(row, taxid_col=taxid_col, accid_col=accid_col), axis=1)
+    df = df.apply(lambda row: check_assembly_exists(row, taxid_col=taxid_col, accid_col=accid_col, include_term=include_term, exclude_term=exclude_term), axis=1)
     df.to_csv(args.assessment, index=False, sep='\t')
 
 def main():

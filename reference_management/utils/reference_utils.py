@@ -3,7 +3,7 @@ import logging
 import os
 import pandas as pd
 from typing import Optional
-from utils.ncbi_tools import Passport, NCBITools, LocalAssembly
+from utils.ncbi_tools import Passport, NCBITools, LocalAssembly, ReferenceData
 
 def dl_file(url: str, dest: str) -> None:
     """
@@ -75,7 +75,7 @@ class AssemblyStore:
         return LocalAssembly(taxid=passport.taxid, accession=accid, file_path=assembly_file) if assembly_file else None
 
 
-    def retrieve_assembly(self, passport: Passport) -> Optional[LocalAssembly]:
+    def retrieve_assembly(self, passport: Passport, reference_data: Optional[ReferenceData] = None, include_term: Optional[str] = None, exclude_term: Optional[str] = None) -> Optional[LocalAssembly]:
         """
         Retrieve the assembly for the given taxid, either from local storage or NCBI.
         """
@@ -88,8 +88,9 @@ class AssemblyStore:
         
         # If not found locally, fetch from NCBI
         self.logger.info(f"Fetching assembly for taxid {passport.taxid} from NCBI...")
-        # exclude plasmids from search
-        reference_data = self.ncbi.query_sequence_databases(passport, include_term='chromosome', exclude_term="plasmid")
+        #
+        if reference_data is None: 
+            reference_data = self.ncbi.query_sequence_databases(passport, include_term=include_term, exclude_term=exclude_term)
         assembly_dir = os.path.join(self.store_path, str(passport.taxid))
         os.makedirs(assembly_dir, exist_ok=True)
 
@@ -105,6 +106,8 @@ class AssemblyStore:
     def match_taxid_to_assembly(
         self,
         classification_output_path: str,
+        include_term: Optional[str] = None,
+        exclude_term: Optional[str] = None
     ) -> pd.DataFrame:
         """
         Match taxids from the classification output to their respective assemblies.
@@ -151,8 +154,26 @@ class AssemblyStore:
                 self.logger.warning(f"Skipping row {index} due to missing taxid and accession.")
                 continue
             self.logger.info(f"Processing taxid {taxid}...")
-            passport = Passport(taxid = taxid, accession = accession)
-            local_assembly = self.retrieve_assembly(passport)
+            reference = None
+            description = None
+            if "description" in row and row['description'] is not None:
+                description = str(row['description'])
+            if row['nucleotide_id'] is not None and not pd.isna(row['nucleotide_id']):
+                reference = ReferenceData(
+                    taxid=taxid,
+                    accession=accession,
+                    nucleotide_id=str(int(row['nucleotide_id'])),
+                    assembly_id=None
+                )
+            elif row['assembly_id'] is not None and not pd.isna(row['assembly_id']):
+                reference = ReferenceData(
+                    taxid=taxid,
+                    accession=accession,
+                    nucleotide_id=None,
+                    assembly_id=str(int(row['assembly_id']))
+                )
+            passport = Passport(taxid=taxid, accession=accession)
+            local_assembly = self.retrieve_assembly(passport, reference_data=reference, include_term=include_term, exclude_term=exclude_term)
 
             if local_assembly:
                 df.at[index, 'assembly_accession'] = local_assembly.accession
