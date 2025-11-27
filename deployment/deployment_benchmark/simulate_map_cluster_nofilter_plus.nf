@@ -473,7 +473,8 @@ process ExtractReferenceSequences {
     ${params.python_bin} ${params.references_extract_script} retrieve \
     --input_table ${classifier_output} \
     --assembly_store "${params.assembly_store}" \
-    --mapping_references_dir "reference_sequences" 
+    --mapping_references_dir "reference_sequences" \
+    --include_term "complete"
     """
 }
 
