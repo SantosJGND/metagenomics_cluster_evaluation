@@ -158,20 +158,21 @@ class AssemblyStore:
             description = None
             if "description" in row and row['description'] is not None:
                 description = str(row['description'])
-            if row['nucleotide_id'] is not None and not pd.isna(row['nucleotide_id']):
-                reference = ReferenceData(
-                    taxid=taxid,
-                    accession=accession,
-                    nucleotide_id=str(int(row['nucleotide_id'])),
-                    assembly_id=None
-                )
-            elif row['assembly_id'] is not None and not pd.isna(row['assembly_id']):
-                reference = ReferenceData(
-                    taxid=taxid,
-                    accession=accession,
-                    nucleotide_id=None,
-                    assembly_id=str(int(row['assembly_id']))
-                )
+            if 'nucleotide_id' in row and 'assembly_id' in row:
+                if row['nucleotide_id'] is not None and not pd.isna(row['nucleotide_id']):
+                    reference = ReferenceData(
+                        taxid=taxid,
+                        accession=accession,
+                        nucleotide_id=str(int(row['nucleotide_id'])),
+                        assembly_id=None
+                    )
+                elif row['assembly_id'] is not None and not pd.isna(row['assembly_id']):
+                    reference = ReferenceData(
+                        taxid=taxid,
+                        accession=accession,
+                        nucleotide_id=None,
+                        assembly_id=str(int(row['assembly_id']))
+                    )
             passport = Passport(taxid=taxid, accession=accession)
             local_assembly = self.retrieve_assembly(passport, reference_data=reference, include_term=include_term, exclude_term=exclude_term)
 
