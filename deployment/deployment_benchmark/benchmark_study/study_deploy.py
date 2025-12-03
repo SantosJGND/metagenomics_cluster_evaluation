@@ -18,8 +18,6 @@ def retrieve_simulation_input(study_output_filepath: str) -> pd.DataFrame:
 
     for data_set_name in folders:
 
-        # data_set_name = data_set_file.replace("_plan.tsv", "")
-        sample_name = f"{data_set_name}_sample"
         output_filepath = os.path.join(study_output_filepath, f"{data_set_name}", "input", f"{data_set_name}.tsv")
         df = pd.read_csv(output_filepath, sep="\t")
 
@@ -52,9 +50,7 @@ def output_parse(study_output_filepath: str, ncbi_wrapper: NCBITaxonomistWrapper
     for data_set_name in folders:
         output_taxids = process_clade_report(data_set_name, study_output_filepath)
         all_output_taxids.update(output_taxids)
-
-    output_db = os.path.join(study_output_filepath, "taxa.db")
-    ncbi_wrapper = NCBITaxonomistWrapper(db=output_db)
+    
     taxids = list(all_output_taxids) + input_taxids
 
     ncbi_wrapper.resolve_lineages(taxids)
@@ -67,23 +63,8 @@ def output_parse(study_output_filepath: str, ncbi_wrapper: NCBITaxonomistWrapper
     return output_taxids_table
 
 def establish_taxids_to_use(study_output_filepath: str, ncbi_wrapper: NCBITaxonomistWrapper, tax_level_to_use= 'order', min_tax_count= 0.02, normalize = True):
-    folders = [f for f in os.listdir(study_output_filepath) if os.path.isdir(os.path.join(study_output_filepath, f))]
-    all_output_taxids = set()
-    for data_set_name in folders:
-        output_taxids = process_clade_report(data_set_name, study_output_filepath)
-        all_output_taxids.update(output_taxids)
-
-    output_db = os.path.join(study_output_filepath, "taxa.db")
-    ncbi_wrapper = NCBITaxonomistWrapper(db=output_db)
-    taxids = list(all_output_taxids) + input_taxids
-
-    ncbi_wrapper.resolve_lineages(taxids)
-
-    output_taxids_table = pd.DataFrame(list(all_output_taxids), columns=['taxid'])
-    output_taxids_table['order'] = output_taxids_table.apply(lambda row: ncbi_wrapper.get_level(row['taxid'], 'order'), axis=1)
-    output_taxids_table['family'] = output_taxids_table.apply(lambda row: ncbi_wrapper.get_level(row['taxid'], 'family'), axis=1)
-    output_taxids_table['genus'] = output_taxids_table.apply(lambda row: ncbi_wrapper.get_level(row['taxid'], 'genus'), axis=1)
-
+    
+    output_taxids_table = output_parse(study_output_filepath, ncbi_wrapper)
     taxids_to_use = output_taxids_table[output_taxids_table[tax_level_to_use].map(output_taxids_table[tax_level_to_use].value_counts(normalize=normalize)) > min_tax_count] 
 
     taxids_to_use = taxids_to_use.dropna(subset=[tax_level_to_use]).drop_duplicates(subset=[tax_level_to_use]).reset_index(drop=True)
@@ -106,9 +87,8 @@ def expand_input_data(all_input_data: pd.DataFrame, ncbi_wrapper: NCBITaxonomist
     
     return input_tax_df
 
-def run_data_retrieval(study_output_filepath: str, data_set_divide: int, ncbi_wrapper: NCBITaxonomistWrapper, input_tax_df: pd.DataFrame, tax_level_to_use: str, taxids_to_use: pd.DataFrame):
+def run_data_retrieval(trainning_folders:list, study_output_filepath: str, data_set_divide: int, ncbi_wrapper: NCBITaxonomistWrapper, input_tax_df: pd.DataFrame, tax_level_to_use: str, taxids_to_use: pd.DataFrame):
     
-    trainning_folders = [f for f in os.listdir(study_output_filepath) if os.path.isdir(os.path.join(study_output_filepath, f))]
     trainning_results = []
     prediction_trainning_results = []
     recall_trainning_results = []
@@ -150,7 +130,8 @@ from utils.om_models import get_trash_composition, get_cross_hit_composition, ca
 from utils.om_models import CompositionModeller, RecallModeller, CrossHitModeller
 
 
-def compound_eda_function(study_output_filepath: str, 
+def compound_eda_function(remaining_folders,
+                            study_output_filepath: str, 
                           data_set_divide: int,
                             ncbi_wrapper: NCBITaxonomistWrapper, 
                             input_tax_df: pd.DataFrame, 
@@ -160,7 +141,6 @@ def compound_eda_function(study_output_filepath: str,
                             composition_modeller: CompositionModeller,
                             cross_hit_modeller: CrossHitModeller):
 
-    remaining_folders = [f for f in os.listdir(study_output_filepath) if os.path.isdir(os.path.join(study_output_filepath, f))]
     test_results = []
     # cross-hit threshold
     cross_hit_threshold = 0.9
@@ -176,7 +156,7 @@ def compound_eda_function(study_output_filepath: str,
                 print(f"Input file {input_df_filepath} does not exist. Skipping {data_set_name}.")
                 continue
             if overlap_manager.m_stats_matrix.empty:
-                print(f"No reads mapped for {data_set_name}. Skipping.")
+                #print(f"No reads mapped for {data_set_name}. Skipping.")
                 continue
             input_df = pd.read_csv(input_df_filepath, sep="\t")
             input_df_summary = input_df[['sample', 'taxid', 'reads', 'mutation_rate']].drop_duplicates()
@@ -287,7 +267,8 @@ def get_args():
     parser.add_argument("--threshold", type=float, default=0.3, help="Threshold value for model")
     parser.add_argument("--taxa_threshold", type=float, default=0.02, help="Taxa threshold for filtering")
     parser.add_argument("--tax_level_to_use", type=str, default='order', help="Taxonomic level to use")
-    parser.add_argument("--data_set_divide", type=int, default=10, help="Data set divide for training/testing")
+    parser.add_argument("--data_set_divide", type=int, default=5, help="Data set divide for training/testing")
+    parser.add_argument("--holdout_proportion", type=float, default=0.3, help="Proportion of data to hold out for testing")
 
     return parser.parse_args()
 
@@ -301,6 +282,8 @@ if __name__ == "__main__":
     taxa_threshold = args.taxa_threshold
     tax_level_to_use = args.tax_level_to_use
     data_set_divide = args.data_set_divide
+    holdout_proportion = args.holdout_proportion
+    proportion_train = 1 - holdout_proportion
 
     #study_output_filepath = "/home/bioinf/Desktop/INSA/Projectos/CLUSTER_EVAL/study/studies/model/output/study_simulation_virus"
     #taxid_plan_filepath = "/home/bioinf/Desktop/INSA/Projectos/CLUSTER_EVAL/test_run/tables/db/assessment_virus.tsv"
@@ -328,18 +311,24 @@ if __name__ == "__main__":
     #### Load taxid plan
     taxid_plan = pd.read_csv(taxid_plan_filepath, sep="\t")
     taxid_plan = taxid_plan[['taxid', 'description','lineage']].drop_duplicates(subset=['taxid'])
+    folders = [f for f in os.listdir(study_output_filepath) if os.path.isdir(os.path.join(study_output_filepath, f))]
 
     all_input_data = retrieve_simulation_input(study_output_filepath)
     ncbi_wrapper = NCBITaxonomistWrapper(db=output_db)
     input_taxids = all_input_data['taxid'].dropna().unique().tolist()
     ncbi_wrapper.resolve_lineages(input_taxids)
 
+    #### load output taxids
     input_tax_df = expand_input_data(all_input_data, ncbi_wrapper, taxid_plan)
+    logger.info(f"Number of unique input taxids: {input_tax_df.shape[0]}")
+    logger.info(f"ncbi_wrapper loaded with {len(ncbi_wrapper.lineages)} taxid lineages.")
     taxids_to_use = establish_taxids_to_use(study_output_filepath, ncbi_wrapper, tax_level_to_use= tax_level_to_use, min_tax_count= taxa_threshold, normalize = True)
     logger.info(f"Number of taxids to use at level {tax_level_to_use}: {taxids_to_use.shape[0]}")
-
-    ### Run data retrieval  
-    trainning_results_df, prediction_trainning_results_df, recall_trainning_results = run_data_retrieval(study_output_filepath, data_set_divide, ncbi_wrapper, input_tax_df, tax_level_to_use, taxids_to_use)
+    logger.info(f"ncbi_wrapper loaded with {len(ncbi_wrapper.lineages)} taxid lineages.")
+    ### Run data retrieval
+    trainning_folders = folders[:int(len(folders) * proportion_train)]
+    logger.info(f"Number of training datasets: {len(trainning_folders)}")
+    trainning_results_df, prediction_trainning_results_df, recall_trainning_results = run_data_retrieval(trainning_folders, study_output_filepath, data_set_divide, ncbi_wrapper, input_tax_df, tax_level_to_use, taxids_to_use)
     ndata_sets = trainning_results_df['data_set'].nunique()
     logger.info(f"Number of training datasets retrieved: {ndata_sets}")
     ### Models
@@ -352,11 +341,15 @@ if __name__ == "__main__":
     model_composition, X_train_composition, X_test_composition, y_test_composition = composition_modeller.train_model()
     crosshit_modeller.train_model()
 
-    recall_modeller.plot_eval(X_test_recall, Y_test_recall, analysis_output_filepath)
+    recall_modeller.model_summary(recall_modeller.model, X_test_recall, Y_test_recall, analysis_output_filepath)
+    print("Recall model evaluation completed.")
+    print(X_train_composition.shape, X_test_composition.shape, y_test_composition.shape)
     composition_modeller.eval_and_plot(X_test_composition, y_test_composition, analysis_output_filepath, X_train=X_train_composition)
 
     #### Cross-Hit Analysis
+    remaining_folders = folders[int(len(folders) * proportion_train):]
     test_results_df, summary_results_df, trash_results_df, cross_hit_results_df = compound_eda_function(
+        remaining_folders,
         study_output_filepath, 
         data_set_divide,
         ncbi_wrapper, 
@@ -493,10 +486,11 @@ if __name__ == "__main__":
     plt.title('Average Cross-Hit Composition by Tax Level')
     plt.xlabel('Taxa')
     plt.ylabel('Tax Level')
-    plt.show()
+    plt.savefig(os.path.join(analysis_output_filepath, "cross_hit_composition_heatmap.png"))
+    plt.close()
 
 
-    def composition_summary(composition_df: pd.DataFrame):
+    def composition_summarylk(composition_df: pd.DataFrame):
         summary_list = []
         for tax_level in composition_df['tax_level'].unique():
             subset = composition_df[composition_df['tax_level'] == tax_level]
@@ -521,4 +515,5 @@ if __name__ == "__main__":
     plt.title('Average Trash Composition by Tax Level')
     plt.xlabel('Taxa')
     plt.ylabel('Tax Level')
-    plt.show()
+    plt.savefig(os.path.join(analysis_output_filepath, "trash_composition_heatmap.png"))
+    plt.close()

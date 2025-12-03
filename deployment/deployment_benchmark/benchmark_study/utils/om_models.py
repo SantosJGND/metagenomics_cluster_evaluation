@@ -226,19 +226,26 @@ class RecallModeller:
         self.model = model
         return model, X_test, Y_test
 
-    def evaluate_model(self, model, X_test, Y_test):
+    def evaluate_model(self, model, X_test, Y_test, ouptput_filepath):
         from sklearn.metrics import r2_score, mean_squared_error
 
         Y_pred = model.predict(X_test)
         r2_scores = {}
         mse_scores = {}
-        for i, col in enumerate(self.RecP_target_cols):
-            r2 = r2_score(Y_test.iloc[:, i], Y_pred[:, i])
-            mse = mean_squared_error(Y_test.iloc[:, i], Y_pred[:, i])
-            r2_scores[col] = r2
-            mse_scores[col] = mse
+        with open(ouptput_filepath, 'w') as f:
+            f.write("\t".join(["Target_Column", "R2_Score", "MSE"]) + "\n")
+            for i, col in enumerate(self.RecP_target_cols):
+                r2 = r2_score(Y_test.iloc[:, i], Y_pred[:, i])
+                mse = mean_squared_error(Y_test.iloc[:, i], Y_pred[:, i])
+                r2_scores[col] = r2
+                mse_scores[col] = mse
+                f.write(f"{col}\t{r2}\t{mse}\n")
         return r2_scores, mse_scores
     
+    def feature_importances(self, model, output_filepath):
+        importances = np.mean([est.feature_importances_ for est in model.estimators_], axis=0)
+        feat_importance = pd.Series(importances, index=self.RecP_feature_cols).sort_values(ascending=False)
+        feat_importance.to_csv(output_filepath)
 
     def plot_eval(self, X_test, Y_test, analysis_output_filepath):
         import matplotlib.pyplot as plt
@@ -254,6 +261,35 @@ class RecallModeller:
         plt.close()
 
 
+    def model_summary(self, model, X_test, Y_test, analysis_output_filedir):
+        Y_pred = model.predict(X_test)
+        from sklearn.metrics import r2_score, mean_squared_error
+        r2 = r2_score(Y_test, Y_pred, multioutput='uniform_average')
+        mse = mean_squared_error(Y_test, Y_pred, multioutput='uniform_average')
+
+        print(f"model_summary R² = {r2:.3f}, MSE = {mse:.3f}")
+
+        analysis_output_filepath = os.path.join(analysis_output_filedir, "recall_model_analysis_results.txt")
+        r2_scores, mse_scores = self.evaluate_model(model, X_test, Y_test, analysis_output_filepath)
+        feat_importance_filepath = analysis_output_filepath.replace(".txt", "_feature_importances.tsv")
+        self.feature_importances(model, feat_importance_filepath)
+        self.plot_eval(X_test, Y_test, analysis_output_filepath.replace(".txt", "_recall_prediction_differences.png"))
+        import matplotlib.pyplot as plt
+
+        for i in range(2,4):  # first 3 test samples
+            plt.plot(range(1, 6), Y_test.iloc[i, 1:], 'o-', label='True')
+            plt.plot(range(1, 6), Y_pred[i, 1:], 's--', label='Predicted')
+            plt.title(f"Sample {i}: recall curve")
+            plt.xlabel("Recall index (1–5)")
+            plt.ylabel("Recall value")
+            plt.legend()
+            plt.savefig(analysis_output_filepath.replace(".txt", f"_recall_curve_sample_{i}.png"))
+            plt.close()
+
+        return r2_scores, mse_scores
+
+
+
 def cut_off_recall_prediction(study_output_filepath: str, data_set_name: str, modeller: RecallModeller, data_set_divide:int, m_stats_stats_matrix: pd.DataFrame, input_tax_df: pd.DataFrame) -> OverlapManager:
     """
     Predict recall at various cutoffs and filter leaves based on threshold.
@@ -263,7 +299,7 @@ def cut_off_recall_prediction(study_output_filepath: str, data_set_name: str, mo
     recall_pred_df = pd.DataFrame(recall_pred, columns=modeller.RecP_target_cols)
     keep_index = recall_pred_df.iloc[0]['last_best_match_relindex'] * m_stats_stats_matrix.shape[0] 
     keep_index = round(keep_index + 1)
-    print(f"Keeping top {keep_index} leaves based on predicted last_best_match_relindex.")
+    #print(f"Keeping top {keep_index} leaves based on predicted last_best_match_relindex.")
     overlap_manager = OverlapManager(os.path.join(study_output_filepath, f"{data_set_name}", "clustering"), max_taxids=keep_index)
 
     return overlap_manager
@@ -356,12 +392,13 @@ class CompositionModeller:
         best_model.fit(X_train, y_train)
         return best_model, study
 
-    def train_model(self, bayes_optimized: bool = False, **kwargs) -> tuple:
+    def train_model(self, bayes_optimized: bool = True, **kwargs) -> tuple:
         X_train, X_test, y_train, y_test = self.prep_data()
 
         if bayes_optimized:
-            model, study = self.xgbc_model_bayes_optimized(X_train, y_train)
-            return model, X_test, y_test
+            model, _study = self.xgbc_model_bayes_optimized(X_train, y_train)
+            self.model = model
+            return model, X_train, X_test, y_test
 
         model = self.xgbc_model(X_train, y_train, **kwargs)
         self.model = model
@@ -403,32 +440,37 @@ class CompositionModeller:
         shap_values = explainer(X_val)
 
         # --- a) Global summary plot
+        plt.figure(figsize=(10, 7))
         shap.summary_plot(shap_values, X_val, plot_type="dot", show=False)
         plt.savefig(f"{output_directory}/shap_summary_plot.png")
+        plt.close()
 
         # --- b) Global bar plot (mean absolute SHAP values)
+        plt.figure(figsize=(10, 7))
         shap.summary_plot(shap_values, X_val, plot_type="bar", show=False)
         plt.savefig(f"{output_directory}/shap_bar_plot.png")
+        plt.close()
 
         # --- c) Individual feature dependence
         # Example: examine how Min_Shared influences precision_increased
-        shap.dependence_plot("Min_Shared", shap_values.values, X_val, show = False)
+        plt.figure(figsize=(10, 7))
+        shap.dependence_plot("Min_Shared", shap_values.values, X_val, show=False)
+        plt.savefig(f"{output_directory}/shap_dependence_plot.png")
+        plt.close()
 
         # --- d) Inspect a single prediction
         # Pick an example (e.g., first sample)
         idx = 0
-        shap.plots.waterfall(shap_values[idx])
-
+        plt.figure(figsize=(10, 7))
+        shap.plots.waterfall(shap_values[idx], show=False)
         plt.savefig(f"{output_directory}/shap_waterfall_plot.png")
+        plt.close()
 
     def shap_interaction_plot(self, model, X_train, X_val, output_directory: str):
         import shap
         import matplotlib.pyplot as plt
         # Explicitly create a TreeExplainer (important!)
         explainer = shap.TreeExplainer(model)
-
-        # Now compute interaction values safely
-        interaction_values = explainer.shap_interaction_values(X_val)
 
         # Compute SHAP interaction values (can be memory heavy for large data)
         interaction_values = explainer.shap_interaction_values(X_val)
@@ -445,10 +487,12 @@ class CompositionModeller:
         sns.heatmap(interaction_df, cmap="viridis")
         plt.title("Mean absolute SHAP interaction values")
         plt.savefig(f"{output_directory}/shap_interaction_heatmap.png")
-    
+        interaction_df = interaction_df.drop(columns=self.X_stats_cols, index=self.X_stats_cols)
         distance_matrix = 1 - interaction_df
+        print(distance_matrix.shape)
         # fill diagonal with 0
         np.fill_diagonal(distance_matrix.values, 0)
+        distance_matrix = distance_matrix.fillna(0)
         # create tree from distance matrix
         from scipy.cluster.hierarchy import linkage, dendrogram
         from scipy.spatial.distance import squareform
@@ -521,7 +565,9 @@ class CrossHitModeller:
         model.fit(X_train, y_train)
         return model
     
-    def train_model(self, **kwargs):
+    def train_model(self, optimized: bool = False, **kwargs):
+        if optimized:
+            return self.train_model_bayes_optimized()
         X_train, X_test, y_train, y_test = self.prep_data()
         model = self.xgbc_model(X_train, y_train, **kwargs)
         return model, X_test, y_test
