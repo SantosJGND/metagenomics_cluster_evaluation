@@ -42,7 +42,7 @@ class NCBITaxonomistWrapper:
         self.db_path = db
         self.temp_dir = temp_dir
         self.lineages: dict[int, dict[str, dict[str, str]]] = {}
-        self.max_fetch = 50 # max taxids to fetch at once
+        self.max_fetch = 30 # max taxids to fetch at once
 
     def retrieve_lineages_cmd_local(self, taxids: List[int]) -> str:
         """
@@ -374,7 +374,7 @@ def retrieve_passport_taxonomy(taxid: str) -> Optional[str]:
         # standardize lineage to taxonomy levels
         return lineage
     except Exception as e:
-        print(f"An error occurred while fetching taxonomy for taxid {taxid}: {e}")
+        #print(f"An error occurred while fetching taxonomy for taxid {taxid}: {e}")
         return None
 
 

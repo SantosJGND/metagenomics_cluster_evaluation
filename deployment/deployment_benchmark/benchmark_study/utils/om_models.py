@@ -9,6 +9,8 @@ from utils.overlap_manager_stats import node_leaves_best_taxids, node_leaf_shann
 import os
 import numpy as np
 from utils.overlap_manager_stats import get_m_stats_matrix, normalize_by_taxlevel, get_composition_by_leaf
+from utils.overlap_manager_stats import get_subset_composition_counts
+from utils.stats import shannon_diversity_from_list, skewness, kurtosis
 
 ########################################################################################################
 ########################################################################################################
@@ -139,8 +141,6 @@ def cross_hit_prediction_matrix(data_set_name,
 ################ RECALL CUTOFF #######################################################################
 ######################################################################################
 
-from utils.overlap_manager_stats import get_subset_composition_counts
-from utils.stats import shannon_diversity_from_list, skewness, kurtosis
 
 def predict_recall_cutoff_vars(data_set_divide:int, data_set_name: str, m_stats_stats_matrix: pd.DataFrame, input_tax_df: pd.DataFrame, tax_level: str = "order") -> pd.DataFrame:
     """

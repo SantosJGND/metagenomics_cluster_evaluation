@@ -22,10 +22,11 @@ def retrieve_simulation_input(study_output_filepath: str) -> pd.DataFrame:
         df = pd.read_csv(output_filepath, sep="\t")
 
         df['data_set'] = data_set_name.replace("_plan", "")
-
+        if df.empty:
+            continue
         input_files.append(df)
 
-
+    
     all_input_data = pd.concat(input_files, ignore_index=True)
 
     return all_input_data

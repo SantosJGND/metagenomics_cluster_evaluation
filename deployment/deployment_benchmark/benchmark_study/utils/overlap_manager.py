@@ -119,7 +119,7 @@ class OverlapManager:
             self.all_nodes = [str(n) for n in distance_matrix.index]
             self.tree = nx.DiGraph()
             self.tree.add_nodes_from(self.all_nodes)
-            self.m_stats_matrix = pd.DataFrame()
+            self.m_stats_matrix = pd.DataFrame(columns = ['description','taxid', 'file', 'assid'])
         
         self.leaves = [n for n,d in self.tree.out_degree() if d==0]
         self.m_stats_matrix['leaf'] = self.m_stats_matrix.apply(self.get_leaf, axis=1)
