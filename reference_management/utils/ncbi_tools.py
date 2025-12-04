@@ -111,7 +111,7 @@ def retrieve_passport_taxonomy(taxid: str) -> Optional[str]:
         # standardize lineage to taxonomy levels
         return lineage
     except Exception as e:
-        print(f"An error occurred while fetching taxonomy for taxid {taxid}: {e}")
+        #print(f"An error occurred while fetching taxonomy for taxid {taxid}: {e}")
         return None
 
 
@@ -286,9 +286,9 @@ def retrieve_assembly_sequence(assembly_id, output_path) -> bool:
 class NCBITools:
     def __init__(self):
         self.logger = logging.getLogger('NCBITools')
-        self.logger.setLevel(logging.DEBUG)
+        self.logger.setLevel(logging.INFO)
         ch = logging.StreamHandler()
-        ch.setLevel(logging.DEBUG)
+        ch.setLevel(logging.INFO)
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         ch.setFormatter(formatter)
         self.logger.addHandler(ch)
