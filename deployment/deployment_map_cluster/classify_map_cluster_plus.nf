@@ -10,7 +10,7 @@ workflow {
     }
 
     Channel
-        .fromPath(["${params.reads}/*_R1.fq.gz", "${params.reads}/*_R2.fq.gz"])
+        .fromPath(["${params.reads}/*1.fq.gz", "${params.reads}/*1.fastq.gz", "${params.reads}/*2.fq.gz", "${params.reads}/*2.fastq.gz"])
         .map { file -> tuple(file) }
         .ifEmpty { error('Cannot find any paired-end fastq files') }
         .set { reads_ch }
