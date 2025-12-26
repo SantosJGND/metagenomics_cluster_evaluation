@@ -1,48 +1,46 @@
-params.input_table = params.input_table ?: ""
+params.analysis_id = params.analysis_id ?: UUID.randomUUID().toString()
 
 workflow {
 
-    if (params.input_table == "") {
-        error("Input table path is not provided. Please set the 'input_table' parameter.")
-    }
-    input_table_ch = Channel
-        .fromPath(params.input_table)
-        .ifEmpty { error("Cannot find the input table: ${params.input_table}") }
+    analysis_id = params.analysis_id
 
-    // Get reference sequences for each taxonomic ID in the input table
-    matched_table_ch = ExtractFastaSequences(input_table_ch)
-    input_table_ch = FormatToMess(input_table_ch, matched_table_ch.input_table_with_sequences)
 
-    // Simulate reads based on the input table
-    reads_ch = WgsimSimulateReads(params.technology, input_table_ch).map { table_id, fastq_files ->
-        // Unpack the list of FASTQ files into separate variables
-        def (fastq1, fastq2) = fastq_files
-        tuple(table_id, fastq1, fastq2)
+    if (params.reads == "") {
+        error("Reads directory path is not provided. Please set the 'reads' parameter.")
     }
 
-    reads_ch = QCReadsPrinseqPaired(input_table_ch, reads_ch)
+    Channel
+        .fromPath(["${params.reads}/*_R1.fq.gz", "${params.reads}/*_R2.fq.gz"])
+        .map { file -> tuple(file) }
+        .ifEmpty { error('Cannot find any paired-end fastq files') }
+        .set { reads_ch }
+    reads_ch = reads_ch.collect()
+
+    // print
+    reads_ch.view()
+
+    reads_ch = QCReadsPrinseqPaired(analysis_id, reads_ch)
 
     // Process reads using classifiers
-    centrifuge_classification_ch = CentrifugeClassificationPaired(input_table_ch, reads_ch)
-    kraken2_classification_ch = Kraken2ClassificationPaired(input_table_ch, reads_ch)
-    diamond_classificPARAMS_FILE="params_local.json"ation_ch = DiamondClassificationPaired(input_table_ch, reads_ch)
-    krakenunique_classification_ch = KrakenUniqueClassificationPaired(input_table_ch, reads_ch)
+    centrifuge_classification_ch = CentrifugeClassificationPaired(analysis_id, reads_ch)
+    kraken2_classification_ch = Kraken2ClassificationPaired(analysis_id, reads_ch)
+    diamond_classification_ch = DiamondClassificationPaired(analysis_id, reads_ch)
+    krakenunique_classification_ch = KrakenUniqueClassificationPaired(analysis_id, reads_ch)
     merge_classification_results_ch = MergeClassificationResults(
         centrifuge_classification_ch,
         kraken2_classification_ch,
         krakenunique_classification_ch,
         diamond_classification_ch,
     )
-
     // Extract reference sequences from the classification results
-    reference_sequences_ch = ExtractReferenceSequences(input_table_ch, merge_classification_results_ch)
+    reference_sequences_ch = ExtractReferenceSequences(analysis_id, merge_classification_results_ch)
 
     // Check if reference sequences are empty and end workflow gracefully if so
     flattened_reference_sequences_ch = reference_sequences_ch.reference_sequences.flatMap { ref_list -> ref_list }
 
     combined_ch = reads_ch.combine(flattened_reference_sequences_ch)
 
-    mapped_reads_ch = MapMinimap2Paired(combined_ch, params.minimap2_illumina_params)
+    mapped_reads_ch = MapMinimap2Paired(analysis_id, combined_ch, params.minimap2_illumina_params)
 
     // Extract mapping statistics from BAM files
     filtered_alignments_ch = FilterBamMsamtools(mapped_reads_ch)
@@ -61,7 +59,7 @@ workflow {
     merged_coverage_ch = MergeCoverageStatistics(coverage_ch)
 
     // Cluster mapped reads across alignment files
-    clustering_ch = ClusterMappedReads(input_table_ch, mapping_files_info)
+    clustering_ch = ClusterMappedReads(analysis_id, mapping_files_info)
 
     clustering_ch.clade_report.ifEmpty {
         log.info("No clustering results generated. Ending workflow.")
@@ -69,7 +67,7 @@ workflow {
     }
 
     MatchCladeReportWithReferenceSequences(
-        input_table_ch,
+        analysis_id,
         clustering_ch.clade_report,
         reference_sequences_ch.matched_assemblies,
         merged_coverage_ch.merged_coverage_statistics,
@@ -86,80 +84,30 @@ process QCReadsPrinseqPaired {
     debug true
 
     input:
-    path input_table
-    tuple val(query_id), path(fastq1), path(fastq2)
+    val analysis_id
+    tuple path(fastq1), path(fastq2)
 
     output:
-    tuple val(query_id), path("${input_table.baseName}_good_R1.fastq.gz"), path("${input_table.baseName}_good_R2.fastq.gz")
+    tuple path("${analysis_id}_good_R1.fastq.gz"), path("${analysis_id}_good_R2.fastq.gz")
 
     script:
     """
-    prinseq++ ${params.prinseq_params} -fastq ${fastq1} -fastq2 ${fastq2} -out_good ${query_id}_good_R1.fastq -out_bad ${query_id}_bad_R1.fastq \
-    -out_good2 ${query_id}_good_R2.fastq -out_bad2 ${query_id}_bad_R2.fastq
-    bgzip ${query_id}_good_R1.fastq && bgzip ${query_id}_good_R2.fastq
-    bgzip ${query_id}_bad_R1.fastq && bgzip ${query_id}_bad_R2.fastq
+    prinseq++ ${params.prinseq_params} -fastq ${fastq1} -fastq2 ${fastq2} -out_good ${analysis_id}_good_R1.fastq -out_bad ${analysis_id}_bad_R1.fastq \
+    -out_good2 ${analysis_id}_good_R2.fastq -out_bad2 ${analysis_id}_bad_R2.fastq
+    bgzip ${analysis_id}_good_R1.fastq && bgzip ${analysis_id}_good_R2.fastq
+    bgzip ${analysis_id}_bad_R1.fastq && bgzip ${analysis_id}_bad_R2.fastq
     """
 }
 
-
-/*
-* Match FormatSequences file to mess input table
-*/
-process FormatToMess {
-    tag "FormatToMess ${input_table.baseName}"
-    publishDir "${params.output_dir}/${input_table.baseName}/input", mode: 'copy'
-
-    input:
-    path input_table
-    path matched_table
-
-    output:
-    path "${input_table.baseName}.tsv", emit: formatted_input_table
-
-    script:
-    """
-    #!/usr/bin/env python3
-    import os
-    import pandas as pd
-    matched_table = pd.read_csv("${matched_table}", sep="\\t")
-    if 'path' not in matched_table.columns:
-        if 'assembly_file' not in matched_table.columns:
-            raise ValueError("The matched table must contain a 'path' or 'assembly_file' column.")
-        matched_table.rename(columns = {'assembly_file': 'path'}, inplace=True)
-    matched_table['fasta'] = matched_table['path'].apply(lambda x: os.path.basename(x))
-    matched_table.to_csv("${input_table.baseName}.tsv", sep="\\t", index=False)
-    """
-}
-
-/*
-* extract fasta sequences corresponding to the taxonomic IDs in the input_table
-*/
-process ExtractFastaSequences {
-    tag "ExtractFastaSequences ${input_table.baseName}"
-
-    input:
-    path input_table
-
-    output:
-    path "reference_sequences/matched_assemblies.tsv", emit: input_table_with_sequences
-
-    script:
-    """
-    ${params.python_bin} ${params.references_extract_script} retrieve \
-    --input_table ${input_table} \
-    --assembly_store "${params.assembly_store}" \
-    --mapping_references_dir "reference_sequences" 
-    """
-}
 
 /*
 * merge coverage statistics from different BAM files
 */
 process MergeCoverageStatistics {
-    tag "MergeCoverageStatistics ${query_id}"
+    tag "MergeCoverageStatistics ${analysis_id}"
 
     input:
-    tuple val(query_id), path(stats_files), path(coverage_files)
+    tuple val(analysis_id), path(stats_files), path(coverage_files)
 
     output:
     path "merged_coverage_statistics.tsv", emit: merged_coverage_statistics
@@ -275,11 +223,11 @@ process FilterBamMsamtools {
 * match clustering clade_report.txt and reference_sequences/matched_assemblies.tsv
 */
 process MatchCladeReportWithReferenceSequences {
-    tag "MatchCladeReportWithReferenceSequences ${input_table.baseName}"
-    publishDir "${params.output_dir}/${input_table.baseName}/output", mode: 'copy'
+    tag "MatchCladeReportWithReferenceSequences ${analysis_id}"
+    publishDir "${params.output_dir}/${analysis_id}/output", mode: 'copy'
 
     input:
-    path input_table
+    val analysis_id
     path clade_report
     path matched_assemblies
     path coverage_report
@@ -410,11 +358,11 @@ process ExtractMappingStatistics {
 * cluster mapped reads accross alignment files
 */
 process ClusterMappedReads {
-    tag "ClusterMappedReads ${input_table.baseName}"
-    publishDir "${params.output_dir}/${input_table.baseName}", mode: 'copy'
+    tag "ClusterMappedReads ${analysis_id}"
+    publishDir "${params.output_dir}/${analysis_id}", mode: 'copy'
 
     input:
-    path input_table
+    val analysis_id
     tuple val(query_id), path(mapped_reads)
 
     output:
@@ -442,15 +390,16 @@ process MapMinimap2Paired {
     tag "MapMinimap2Paired ${fastq1} ${fastq2} ${reference.baseName}"
 
     input:
-    tuple val(query_id), path(fastq1), path(fastq2), path(reference)
+    val analysis_id
+    tuple path(fastq1), path(fastq2), path(reference)
     val minimap2_params
 
     output:
-    tuple path("${fastq1.baseName}_${reference.baseName}.bam"), val(query_id), val(reference.baseName)
+    tuple path("${fastq1.baseName}_${reference.baseName}.bam"), val(analysis_id), val(reference.baseName)
 
     script:
     """
-    mkdir -p ${query_id}
+    mkdir -p ${analysis_id}
     minimap2 ${minimap2_params} -ax sr ${reference} ${fastq1} ${fastq2} | samtools view -bS -F 4 - > ${fastq1.baseName}_${reference.baseName}.bam
     """
 }
@@ -459,10 +408,10 @@ process MapMinimap2Paired {
 * Extract reference sequences from classifier output results to global reference database
 */
 process ExtractReferenceSequences {
-    tag "ExtractReferenceSequences ${input_table.baseName}"
+    tag "ExtractReferenceSequences ${analysis_id}"
 
     input:
-    path input_table
+    val analysis_id
     path classifier_output
 
     output:
@@ -555,78 +504,53 @@ process MergeClassificationResults {
 }
 
 /*
-* Process output from classifiers using python script
-*/
-process ProcessClassifierOutput {
-    tag "ProcessClassifierOutput ${query_id}"
-
-    publishDir "${params.output_dir}/${query_id}/classification/${classifier_type}", mode: 'copy'
-
-    input:
-    path classifier_output
-    val query_id
-    val classifier_type
-
-    output:
-    tuple path("${query_id}_${classifier_type}_processed_classifier_output.tsv"), val(query_id)
-
-    script:
-    """
-    ${params.python_bin} ${params.classifier_process_script} \
-    --input ${classifier_output} \
-    --output ${query_id}_${classifier_type}_processed_classifier_output.tsv \
-    --type ${classifier_type} 
-    """
-}
-
-
-/*
-* Run Kraken2 classification on paired-end reads.
-*/
+ * Run Kraken2 classification on paired-end reads.
+ */
 process Kraken2ClassificationPaired {
-    tag "Kraken2Classification ${input_table.baseName}"
-    publishDir "${params.output_dir}/${input_table.baseName}/classification/kraken2", mode: 'copy'
+    tag "Kraken2Classification ${analysis_id}"
+    publishDir "${params.output_dir}/${analysis_id}/classification/kraken2", mode: 'copy'
 
     input:
-    path input_table
-    tuple val(table_id), path(fastq1), path(fastq2)
+    val analysis_id
+    tuple path(fastq1), path(fastq2)
 
     output:
-    path "${input_table.baseName}_kraken2_report.txt"
-    path "${input_table.baseName}_krk2_processed_classifier_output.tsv"
-    val input_table.baseName
+    path "${analysis_id}_kraken2_report.txt"
+    path "${analysis_id}_krk2_processed_classifier_output.tsv"
+    val analysis_id
 
     script:
     """
     ${params.kraken2_bin} --db ${params.kraken2_index} \
-    --report ${input_table.baseName}_kraken2_report.txt \
-    --output ${input_table.baseName}_kraken2_classification.txt \
+    --report ${analysis_id}_kraken2_report.txt \
+    --output ${analysis_id}_kraken2_classification.txt \
     ${fastq1} ${fastq2} ${params.kraken2_params}
 
     ${params.python_bin} ${params.classifier_process_script} \
-    --input "${input_table.baseName}_kraken2_report.txt" \
-    --output "${input_table.baseName}_krk2_processed_classifier_output.tsv" \
+    --input "${analysis_id}_kraken2_report.txt" \
+    --output "${analysis_id}_krk2_processed_classifier_output.tsv" \
     --type "kraken2" \
     --nuniq_threshold ${params.minimum_uniq_reads}
 
     """
 }
 
+
 /*
 * Classifyt reads using Diamond in paired-end mode
 */
 process DiamondClassificationPaired {
-    tag "DiamondClassificationSingle ${input_table.baseName}"
-    publishDir "${params.output_dir}/${input_table.baseName}/classification/diamond", mode: 'copy'
+    tag "DiamondClassificationSingle ${analysis_id}"
+    publishDir "${params.output_dir}/${analysis_id}/classification/diamond", mode: 'copy'
 
     input:
-    path input_table
-    tuple val(table_id), path(fastq1), path(fastq2)
+    val analysis_id
+    tuple path(fastq1), path(fastq2)
 
     output:
-    path "${input_table.baseName}_diamond_classification.tsv"
-    path "${input_table.baseName}_diamond_processed_classifier_output.tsv"
-    val "${input_table.baseName}"
+    path "${analysis_id}_diamond_classification.tsv"
+    path "${analysis_id}_diamond_processed_classifier_output.tsv"
+    val "${analysis_id}"
 
     script:
     """
@@ -634,12 +558,12 @@ process DiamondClassificationPaired {
     --db ${params.diamond_index} \
     --query ${fastq1} \
     --query ${fastq2} \
-    --out ${input_table.baseName}_diamond_classification.tsv \
+    --out ${analysis_id}_diamond_classification.tsv \
     --outfmt 6 \
     ${params.diamond_params}
     ${params.python_bin} ${params.classifier_process_script} \
-    --input "${input_table.baseName}_diamond_classification.tsv" \
-    --output "${input_table.baseName}_diamond_processed_classifier_output.tsv" \
+    --input "${analysis_id}_diamond_classification.tsv" \
+    --output "${analysis_id}_diamond_processed_classifier_output.tsv" \
     --type "diamond" \
     --nuniq_threshold ${params.minimum_uniq_reads}
     """
@@ -649,27 +573,27 @@ process DiamondClassificationPaired {
 * Classify reads using KrakenUnique in paired-end mode
 */
 process KrakenUniqueClassificationPaired {
-    tag "KrakenUniqueClassificationSingle ${input_table.baseName}"
-    publishDir "${params.output_dir}/${input_table.baseName}/classification/krakenunique", mode: 'copy'
+    tag "KrakenUniqueClassificationSingle ${analysis_id}"
+    publishDir "${params.output_dir}/${analysis_id}/classification/krakenunique", mode: 'copy'
 
     input:
-    path input_table
-    tuple val(table_id), path(fastq1), path(fastq2)
+    val analysis_id
+    tuple path(fastq1), path(fastq2)
 
     output:
-    path "${input_table.baseName}_krakenunique_classification.txt"
-    path "${input_table.baseName}_krakenunique_processed_classifier_output.tsv"
-    val "${input_table.baseName}"
+    path "${analysis_id}_krakenunique_classification.txt"
+    path "${analysis_id}_krakenunique_processed_classifier_output.tsv"
+    val "${analysis_id}"
 
     script:
     """
     ${params.krakenunique_bin} --db ${params.krakenunique_index} \
-    --report ${input_table.baseName}_krakenunique_report.txt \
-    --output ${input_table.baseName}_krakenunique_classification.txt \
+    --report ${analysis_id}_krakenunique_report.txt \
+    --output ${analysis_id}_krakenunique_classification.txt \
     ${fastq1} ${fastq2} ${params.krakenunique_params}
     ${params.python_bin} ${params.classifier_process_script} \
-    --input "${input_table.baseName}_krakenunique_classification.txt" \
-    --output "${input_table.baseName}_krakenunique_processed_classifier_output.tsv" \
+    --input "${analysis_id}_krakenunique_classification.txt" \
+    --output "${analysis_id}_krakenunique_processed_classifier_output.tsv" \
     --type "kuniq" \
     --nuniq_threshold ${params.minimum_uniq_reads}
 
@@ -677,64 +601,39 @@ process KrakenUniqueClassificationPaired {
 }
 
 
+
 /*
 * Classify reads using Centrifuge in paired-end mode
 */
 process CentrifugeClassificationPaired {
-    tag "CentrifugeClassificationSingle ${input_table.baseName}"
-    publishDir "${params.output_dir}/${input_table.baseName}/classification/centrifuge", mode: 'copy'
+    tag "CentrifugeClassificationSingle ${analysis_id}"
+    publishDir "${params.output_dir}/${analysis_id}/classification/centrifuge", mode: 'copy'
 
     input:
-    path input_table
-    tuple val(table_id), path(fastq1), path(fastq2)
+    val analysis_id
+    tuple path(fastq1), path(fastq2)
 
     output:
-    path "${input_table.baseName}_centrifuge_report.txt"
-    path "${input_table.baseName}_centrifuge_processed_classifier_output.tsv"
-    val "${input_table.baseName}"
+    path "${analysis_id}_centrifuge_report.txt"
+    path "${analysis_id}_centrifuge_processed_classifier_output.tsv"
+    val "${analysis_id}"
 
     script:
     """
     centrifuge -x ${params.centrifuge_index} -1 ${fastq1} -2 ${fastq2} \
-    -S ${input_table.baseName}_centrifuge_classification.tsv \
-    --output ${input_table.baseName}_centrifuge_classification.txt \
-    --report-file ${input_table.baseName}_centrifuge_report.txt \
+    -S ${analysis_id}_centrifuge_classification.tsv \
+    --output ${analysis_id}_centrifuge_classification.txt \
+    --report-file ${analysis_id}_centrifuge_report.txt \
     ${params.centrifuge_params}
 
     ${params.python_bin} ${params.classifier_process_script} \
-    --input "${input_table.baseName}_centrifuge_report.txt" \
-    --output "${input_table.baseName}_centrifuge_processed_classifier_output.tsv" \
+    --input "${analysis_id}_centrifuge_report.txt" \
+    --output "${analysis_id}_centrifuge_processed_classifier_output.tsv" \
     --type "centrifuge" \
     --nuniq_threshold ${params.minimum_uniq_reads}  
 
     """
 }
-
-process WgsimSimulateReads {
-    tag "WgsimSimulateReads ${input_table.baseName}"
-    publishDir "${params.output_dir}", mode: 'copy'
-
-    input:
-    val technology
-    path input_table
-
-    output:
-    tuple val("${input_table.baseName}"), path("${input_table.baseName}/fastq/*.fq.gz")
-
-    script:
-    """
-    ${params.python_bin} ${params.wgsim_python_path} \
-    --input_table ${input_table} \
-    --prefix "${input_table.baseName}" \
-    --output_dir "${input_table.baseName}/fastq" \
-    --wgsim_args "${params.wgsim_args}"
-
-    bgzip ${input_table.baseName}/fastq/${input_table.baseName}_R1.fq
-    bgzip ${input_table.baseName}/fastq/${input_table.baseName}_R2.fq
-
-    """
-}
-
 
 /*
 * Simulate reads using the mess package and conda environment
