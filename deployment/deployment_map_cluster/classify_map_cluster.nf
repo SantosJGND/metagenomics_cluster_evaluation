@@ -9,17 +9,29 @@ workflow {
         error("Reads directory path is not provided. Please set the 'reads' parameter.")
     }
 
+
     Channel
-        .fromPath(["${params.reads}/*1.fq.gz", "${params.reads}/*1.fastq.gz", "${params.reads}/*2.fq.gz", "${params.reads}/*2.fastq.gz"])
+        .fromPath(["${params.reads}/*1.fq.gz", "${params.reads}/*1.fastq.gz"])
         .map { file -> tuple(file) }
         .ifEmpty { error('Cannot find any paired-end fastq files') }
-        .set { reads_ch }
-    reads_ch = reads_ch.collect()
+        .set { reads_ch1 }
 
+    Channel
+        .fromPath(["${params.reads}/*2.fq.gz", "${params.reads}/*2.fastq.gz"])
+        .map { file -> tuple(file) }
+        .ifEmpty { file('NO_FILE') }
+        .set { reads_ch2 }
+
+    reads_ch = reads_ch1.combine(reads_ch2)
+
+    qc = QCReadsPrinseqPaired(analysis_id, reads_ch)
     // print
-    reads_ch.view()
+    r1_ch = qc._good_R1
+    r2_ch = qc._good_R2
 
-    reads_ch = QCReadsPrinseqPaired(analysis_id, reads_ch)
+    reads_ch = r1_ch
+        .combine(r2_ch.ifEmpty { file('NO_FILE') })
+        .map { r1, r2 -> tuple(r1, r2) }
 
     // Process reads using classifiers
     centrifuge_classification_ch = CentrifugeClassificationPaired(analysis_id, reads_ch)
@@ -73,9 +85,46 @@ workflow {
 }
 
 
+/*
+* Check reads_ch, if tuple contains only one file, append a placeholder NO_FILE for the second file
+*/
+process CheckReads {
+    input:
+    tuple path(fastq1), path(fastq2)
+
+    output:
+    tuple path(fastq1), path(fastq2)
+
+    script:
+    """
+    if [ ! -f ${fastq2} ]; then
+        echo "No second read file found, using placeholder"
+        fastq2="NO_FILE"
+    fi
+    """
+}
+
 
 /*
-* Quality control of the reads using prinseq++
+* Quality control of single end reads using prinseq++
+*/
+process QCReadsPrinseqSingle {
+    input:
+    val analysis_id
+    tuple path(fastq1)
+
+    output:
+    tuple path("${analysis_id}_good.fastq.gz")
+
+    script:
+    """
+    prinseq++ ${params.prinseq_params} -fastq ${fastq1} -out_good ${analysis_id}_good.fastq -out_bad ${analysis_id}_bad.fastq
+    bgzip ${analysis_id}_good.fastq && bgzip ${analysis_id}_bad.fastq
+    """
+}
+
+/*
+* Quality control of paired reads using prinseq++
 */
 process QCReadsPrinseqPaired {
     debug true
@@ -85,14 +134,20 @@ process QCReadsPrinseqPaired {
     tuple path(fastq1), path(fastq2)
 
     output:
-    tuple path("${analysis_id}_good_R1.fastq.gz"), path("${analysis_id}_good_R2.fastq.gz")
+    path "${analysis_id}_good_R1.fastq.gz", emit: _good_R1
+    path "${analysis_id}_good_R2.fastq.gz", emit: _good_R2, optional: true
 
     script:
     """
-    prinseq++ ${params.prinseq_params} -fastq ${fastq1} -fastq2 ${fastq2} -out_good ${analysis_id}_good_R1.fastq -out_bad ${analysis_id}_bad_R1.fastq \
-    -out_good2 ${analysis_id}_good_R2.fastq -out_bad2 ${analysis_id}_bad_R2.fastq
-    bgzip ${analysis_id}_good_R1.fastq && bgzip ${analysis_id}_good_R2.fastq
-    bgzip ${analysis_id}_bad_R1.fastq && bgzip ${analysis_id}_bad_R2.fastq
+    if [ -f ${fastq2} ]; then
+        prinseq++ ${params.prinseq_params} -fastq ${fastq1} -fastq2 ${fastq2} -out_good ${analysis_id}_good_R1.fastq -out_bad ${analysis_id}_bad_R1.fastq \
+        -out_good2 ${analysis_id}_good_R2.fastq -out_bad2 ${analysis_id}_bad_R2.fastq
+        bgzip ${analysis_id}_good_R1.fastq && bgzip ${analysis_id}_good_R2.fastq
+        bgzip ${analysis_id}_bad_R1.fastq && bgzip ${analysis_id}_bad_R2.fastq
+    else
+        prinseq++ ${params.prinseq_params} -fastq ${fastq1} -out_good ${analysis_id}_good_R1.fastq -out_bad ${analysis_id}_bad_R1.fastq
+        bgzip ${analysis_id}_good_R1.fastq && bgzip ${analysis_id}_bad_R1.fastq
+    fi
     """
 }
 
@@ -396,8 +451,12 @@ process MapMinimap2Paired {
 
     script:
     """
-    mkdir -p ${analysis_id}
-    minimap2 ${minimap2_params} -ax sr ${reference} ${fastq1} ${fastq2} | samtools view -bS -F 4 - > ${fastq1.baseName}_${reference.baseName}.bam
+    if [ -f ${fastq2} ]; then
+        mkdir -p ${analysis_id}
+        minimap2 ${minimap2_params} -ax sr ${reference} ${fastq1} ${fastq2} | samtools view -bS -F 4 - > ${fastq1.baseName}_${reference.baseName}.bam
+    else
+        minimap2 ${minimap2_params} -ax sr ${reference} ${fastq1} | samtools view -bS -F 4 - > ${fastq1.baseName}_${reference.baseName}.bam
+    fi
     """
 }
 
@@ -479,7 +538,6 @@ process MergeClassificationResults {
     """
 }
 
-
 /*
  * Run Kraken2 classification on paired-end reads.
  */
@@ -498,10 +556,18 @@ process Kraken2ClassificationPaired {
 
     script:
     """
-    ${params.kraken2_bin} --db ${params.kraken2_index} \
-    --report ${analysis_id}_kraken2_report.txt \
-    --output ${analysis_id}_kraken2_classification.txt \
-    ${fastq1} ${fastq2} ${params.kraken2_params}
+
+    if [ -f ${fastq2} ]; then
+        ${params.kraken2_bin} --db ${params.kraken2_index} \
+        --report ${analysis_id}_kraken2_report.txt \
+        --output ${analysis_id}_kraken2_classification.txt \
+        ${fastq1} ${fastq2} ${params.kraken2_params}
+    else
+        ${params.kraken2_bin} --db ${params.kraken2_index} \
+        --report ${analysis_id}_kraken2_report.txt \
+        --output ${analysis_id}_kraken2_classification.txt \
+        ${fastq1} ${params.kraken2_params}
+    fi
 
     ${params.python_bin} ${params.classifier_process_script} \
     --input "${analysis_id}_kraken2_report.txt" \
@@ -531,13 +597,24 @@ process DiamondClassificationPaired {
 
     script:
     """
-    ${params.diamond_bin} blastx \
-    --db ${params.diamond_index} \
-    --query ${fastq1} \
-    --query ${fastq2} \
-    --out ${analysis_id}_diamond_classification.tsv \
-    --outfmt 6 \
-    ${params.diamond_params}
+
+    if [ -f ${fastq2} ]; then 
+        ${params.diamond_bin} blastx \
+        --db ${params.diamond_index} \
+        --query ${fastq1} \
+        --query ${fastq2} \
+        --out ${analysis_id}_diamond_classification.tsv \
+        --outfmt 6 \
+        ${params.diamond_params}
+    else
+        ${params.diamond_bin} blastx \
+        --db ${params.diamond_index} \
+        --query ${fastq1} \
+        --out ${analysis_id}_diamond_classification.tsv \
+        --outfmt 6 \
+        ${params.diamond_params}
+    fi
+
     ${params.python_bin} ${params.classifier_process_script} \
     --input "${analysis_id}_diamond_classification.tsv" \
     --output "${analysis_id}_diamond_processed_classifier_output.tsv" \
@@ -564,10 +641,18 @@ process KrakenUniqueClassificationPaired {
 
     script:
     """
-    ${params.krakenunique_bin} --db ${params.krakenunique_index} \
-    --report ${analysis_id}_krakenunique_report.txt \
-    --output ${analysis_id}_krakenunique_classification.txt \
-    ${fastq1} ${fastq2} ${params.krakenunique_params}
+    if [ -f ${fastq2} ]; then
+        ${params.krakenunique_bin} --db ${params.krakenunique_index} \
+        --report ${analysis_id}_krakenunique_report.txt \
+        --output ${analysis_id}_krakenunique_classification.txt \
+        ${fastq1} ${fastq2} ${params.krakenunique_params}
+    else
+        ${params.krakenunique_bin} --db ${params.krakenunique_index} \
+        --report ${analysis_id}_krakenunique_report.txt \
+        --output ${analysis_id}_krakenunique_classification.txt \
+        ${fastq1} ${params.krakenunique_params}
+    fi
+
     ${params.python_bin} ${params.classifier_process_script} \
     --input "${analysis_id}_krakenunique_classification.txt" \
     --output "${analysis_id}_krakenunique_processed_classifier_output.tsv" \
@@ -597,11 +682,19 @@ process CentrifugeClassificationPaired {
 
     script:
     """
-    centrifuge -x ${params.centrifuge_index} -1 ${fastq1} -2 ${fastq2} \
-    -S ${analysis_id}_centrifuge_classification.tsv \
-    --output ${analysis_id}_centrifuge_classification.txt \
-    --report-file ${analysis_id}_centrifuge_report.txt \
-    ${params.centrifuge_params}
+    if [ -f ${fastq1} ] && [ -f ${fastq2} ]; then
+        centrifuge -x ${params.centrifuge_index} -1 ${fastq1} -2 ${fastq2} \
+        -S ${analysis_id}_centrifuge_classification.tsv \
+        --output ${analysis_id}_centrifuge_classification.txt \
+        --report-file ${analysis_id}_centrifuge_report.txt \
+        ${params.centrifuge_params}
+    elif [ -f ${fastq1} ]; then
+        centrifuge -x ${params.centrifuge_index} -U ${fastq1} \
+        -S ${analysis_id}_centrifuge_classification.tsv \
+        --output ${analysis_id}_centrifuge_classification.txt \
+        --report-file ${analysis_id}_centrifuge_report.txt \
+        ${params.centrifuge_params}
+    fi
 
     ${params.python_bin} ${params.classifier_process_script} \
     --input "${analysis_id}_centrifuge_report.txt" \
