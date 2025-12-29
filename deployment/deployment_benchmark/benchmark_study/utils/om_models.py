@@ -1,6 +1,8 @@
 
 
-from typing import List
+from typing import List, Optional
+
+from xgboost import XGBClassifier
 
 from utils.overlap_manager import OverlapManager
 import pandas as pd
@@ -189,6 +191,9 @@ def predict_recall_cutoff_vars(data_set_divide:int, data_set_name: str, m_stats_
 
 
 class RecallModeller:
+
+    model_save_filename = "recall_xgb_model.json"
+
     def __init__(self, recall_trainning_results, data_set_divide: int):
         self.recall_trainning_results = recall_trainning_results.drop(columns=['data_set'])
         self.data_set_divide = data_set_divide
@@ -198,6 +203,7 @@ class RecallModeller:
         ] + [f'index_recall_{i}' for i in range(1, data_set_divide + 1)]
 
         self.RecP_feature_cols = self.recall_trainning_results.columns.difference(self.RecP_target_cols).tolist()
+        self.model: Optional[XGBClassifier] = None
 
 
     def prep_data(self):
@@ -225,6 +231,19 @@ class RecallModeller:
         model = self.multioutput_regressor(X_train, Y_train)
         self.model = model
         return model, X_test, Y_test
+
+    def save_model(self, output_directory: str):
+        if self.model is not None:
+            self.model.save_model(os.path.join(output_directory, self.model_save_filename))
+        else:
+            print("No model to save.")
+
+    def load_model(self, input_directory: str):
+        try:
+            self.model = XGBClassifier()
+            self.model.load_model(os.path.join(input_directory, self.model_save_filename))
+        except Exception as e:
+            print(f"Error loading model: {e}")
 
     def evaluate_model(self, model, X_test, Y_test, ouptput_filepath):
         from sklearn.metrics import r2_score, mean_squared_error
@@ -311,6 +330,9 @@ def cut_off_recall_prediction(study_output_filepath: str, data_set_name: str, mo
 
 
 class CompositionModeller:
+
+    model_save_filename = "composition_xgb_model.json"
+
     def __init__(self, trainning_results_df):
         self.trainning_results_df = trainning_results_df
         self.X = trainning_results_df.drop(columns=['data_set', 'node', 'n_true_leaves', 'precision_increased', 'new_precision', 'precision', 'stop_traversal', 'unclassified'])
@@ -404,6 +426,19 @@ class CompositionModeller:
         self.model = model
         return model, X_train, X_test, y_test
     
+    def save_model(self, output_directory: str):
+        if self.model is not None:
+            self.model.save_model(os.path.join(output_directory, self.model_save_filename))
+        else:
+            print("No model to save.")
+    
+    def load_model(self, output_directory: str):
+        try:
+            self.model = XGBClassifier()
+            self.model.load_model(os.path.join(output_directory, self.model_save_filename))
+        except Exception as e:
+            print(f"Error loading model: {e}")
+
     def evaluate_model(self, model, X_test, y_test):
         from sklearn.metrics import classification_report, confusion_matrix
 
@@ -522,6 +557,9 @@ class CompositionModeller:
 #######################################################################################
 
 class CrossHitModeller:
+
+    model_save_filename = "cross_hit_xgb_model.json"
+
     def __init__(self, prediction_trainning_results_df):
         self.prediction_trainning_results_df = prediction_trainning_results_df
         self.X = self.prediction_trainning_results_df.drop(columns=['leaf', 'is_trash'])
@@ -611,7 +649,22 @@ class CrossHitModeller:
         best_model.fit(X_train, y_train)
         self.model = best_model
         return best_model, X_test, y_test, study
-    
+
+    def save_model(self, output_directory: str):
+
+        if self.model is not None:
+            self.model.save_model(os.path.join(output_directory, self.model_save_filename))
+        else: 
+            print("No model to save.")
+
+    def load_model(self, input_directory: str):
+
+        try:
+            self.model = XGBClassifier()
+            self.model.load_model(os.path.join(input_directory, self.model_save_filename))
+        except Exception as e:
+            print(f"Error loading model: {e}")  
+
 
 ########################################################################################
 ################ TRAVERSAL ######################################################

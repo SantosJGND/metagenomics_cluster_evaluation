@@ -270,7 +270,6 @@ def get_args():
     parser.add_argument("--tax_level_to_use", type=str, default='order', help="Taxonomic level to use")
     parser.add_argument("--data_set_divide", type=int, default=5, help="Data set divide for training/testing")
     parser.add_argument("--holdout_proportion", type=float, default=0.3, help="Proportion of data to hold out for testing")
-
     return parser.parse_args()
 
 
@@ -296,7 +295,9 @@ if __name__ == "__main__":
     #data_set_divide = 5
 
     #### output logger to file
+    models_subdir = os.path.join(analysis_output_filepath, "models")
     os.makedirs(analysis_output_filepath, exist_ok=True)
+    os.makedirs(models_subdir, exist_ok=True)
 
     logging.basicConfig(level=logging.INFO, filename=os.path.join(analysis_output_filepath, "study_deploy.log"), filemode='w',
                         format='%(asctime)s - %(levelname)s - %(message)s')
@@ -313,6 +314,8 @@ if __name__ == "__main__":
     taxid_plan = pd.read_csv(taxid_plan_filepath, sep="\t")
     taxid_plan = taxid_plan[['taxid', 'description','lineage']].drop_duplicates(subset=['taxid'])
     folders = [f for f in os.listdir(study_output_filepath) if os.path.isdir(os.path.join(study_output_filepath, f))]
+    from random import sample
+    folders = sample(folders, 300)
 
     all_input_data = retrieve_simulation_input(study_output_filepath)
     ncbi_wrapper = NCBITaxonomistWrapper(db=output_db)
@@ -341,6 +344,10 @@ if __name__ == "__main__":
     model_recall, X_test_recall, Y_test_recall =recall_modeller.train_model()
     model_composition, X_train_composition, X_test_composition, y_test_composition = composition_modeller.train_model()
     crosshit_modeller.train_model()
+
+    recall_modeller.save_model(models_subdir)
+    composition_modeller.save_model(models_subdir)
+    crosshit_modeller.save_model(models_subdir)
 
     recall_modeller.model_summary(recall_modeller.model, X_test_recall, Y_test_recall, analysis_output_filepath)
     print("Recall model evaluation completed.")
