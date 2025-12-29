@@ -270,6 +270,7 @@ def get_args():
     parser.add_argument("--tax_level_to_use", type=str, default='order', help="Taxonomic level to use")
     parser.add_argument("--data_set_divide", type=int, default=5, help="Data set divide for training/testing")
     parser.add_argument("--holdout_proportion", type=float, default=0.3, help="Proportion of data to hold out for testing")
+    parser.add_argument("--output_db_dir", type=str, required=True, help="Path to the output database directory")
     return parser.parse_args()
 
 
