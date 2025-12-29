@@ -244,7 +244,6 @@ class RecallModeller:
 
     def load_model(self, input_directory: str):
         try:
-            self.model = XGBClassifier()
             bundle = joblib.load(os.path.join(input_directory, self.model_save_filename))
             self.model = bundle['model']
             self.RecP_feature_cols = bundle['feature_names']
@@ -316,11 +315,11 @@ class RecallModeller:
 
 
 
-def cut_off_recall_prediction(study_output_filepath: str, data_set_name: str, modeller: RecallModeller, data_set_divide:int, m_stats_stats_matrix: pd.DataFrame, input_tax_df: pd.DataFrame) -> OverlapManager:
+def cut_off_recall_prediction(study_output_filepath: str, data_set_name: str, modeller: RecallModeller, data_set_divide:int, m_stats_stats_matrix: pd.DataFrame, taxids_to_use: pd.DataFrame, tax_level = 'order') -> OverlapManager:
     """
     Predict recall at various cutoffs and filter leaves based on threshold.
     """
-    recall_stats = predict_recall_cutoff_vars(data_set_divide, data_set_name, m_stats_stats_matrix, input_tax_df)
+    recall_stats = predict_recall_cutoff_vars(data_set_divide, data_set_name, m_stats_stats_matrix, taxids_to_use, tax_level=tax_level)
     recall_pred = modeller.model.predict(recall_stats[modeller.RecP_feature_cols])
     recall_pred_df = pd.DataFrame(recall_pred, columns=modeller.RecP_target_cols)
     keep_index = recall_pred_df.iloc[0]['last_best_match_relindex'] * m_stats_stats_matrix.shape[0] 
@@ -445,8 +444,10 @@ class CompositionModeller:
     
     def load_model(self, output_directory: str):
         try:
-            self.model = XGBClassifier()
-            self.model.load_model(os.path.join(output_directory, self.model_save_filename))
+            bundle = joblib.load(os.path.join(output_directory, self.model_save_filename))
+            self.model = bundle['model']
+            self.scaler = bundle['scaler']
+            self.X_tax_cols = bundle['taxa']
         except Exception as e:
             print(f"Error loading model: {e}")
 
@@ -675,8 +676,9 @@ class CrossHitModeller:
     def load_model(self, input_directory: str):
 
         try:
-            self.model = XGBClassifier()
-            self.model.load_model(os.path.join(input_directory, self.model_save_filename))
+            bundle = joblib.load(os.path.join(input_directory, self.model_save_filename))
+            self.model = bundle['model']
+            self.scaler = bundle['scaler']
         except Exception as e:
             print(f"Error loading model: {e}")  
 

@@ -107,7 +107,7 @@ def run_data_retrieval(trainning_folders:list, study_output_filepath: str, data_
             m_stats_stats_matrix = get_m_stats_matrix(data_set_name, study_output_filepath, ncbi_wrapper, overlap_manager)
             if m_stats_stats_matrix.empty:
                 continue
-            recall_stats = predict_recall_cutoff_vars(data_set_divide, data_set_name, m_stats_stats_matrix, input_tax_df)
+            recall_stats = predict_recall_cutoff_vars(data_set_divide, data_set_name, m_stats_stats_matrix, taxids_to_use, tax_level= tax_level_to_use)
             if not result_df.empty:
                 trainning_results.append(result_df)
             if not prediction_matrix.empty:
@@ -180,7 +180,7 @@ def compound_eda_function(remaining_folders,
 
             ### recall prediction to filter leaves
             overlap_manager = cut_off_recall_prediction(study_output_filepath, data_set_name, recall_predict_modeller, data_set_divide, 
-                                                        m_stats_stats_matrix, input_tax_df)
+                                                        m_stats_stats_matrix, taxids_to_use)
             m_stats_stats_matrix = get_m_stats_matrix(data_set_name, study_output_filepath, ncbi_wrapper, overlap_manager)
             m_stats_stats_matrix['is_trash'] = (m_stats_stats_matrix['best_match_is_best'] == False) & (m_stats_stats_matrix['is_crosshit'] == False)
             clean_m_stats = m_stats_stats_matrix[m_stats_stats_matrix['is_trash'] == False]
