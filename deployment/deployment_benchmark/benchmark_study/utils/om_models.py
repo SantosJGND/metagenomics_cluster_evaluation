@@ -207,7 +207,6 @@ class RecallModeller:
         self.RecP_feature_cols = self.recall_trainning_results.columns.difference(self.RecP_target_cols).tolist()
         self.model: Optional[MultiOutputRegressor] = None
 
-
     def prep_data(self):
         X = self.recall_trainning_results[self.RecP_feature_cols]
         Y = self.recall_trainning_results[self.RecP_target_cols]
@@ -218,9 +217,9 @@ class RecallModeller:
         X, Y = self.prep_data()
         X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=test_size, random_state=random_state)
         return X_train, X_test, Y_train, Y_test
-    
-    def multioutput_regressor(self, X_train, Y_train):
 
+
+    def multioutput_regressor(self, X_train, Y_train):
 
         rf = RandomForestRegressor(n_estimators=100, random_state=42)
         multi_rf = MultiOutputRegressor(rf)
@@ -439,6 +438,7 @@ class CompositionModeller:
             joblib.dump({
                 'model': self.model, 
                 'scaler': self.scaler,
+                'taxa': self.X_tax_cols,
             }, os.path.join(output_directory, self.model_save_filename))
         else:
             print("No model to save.")

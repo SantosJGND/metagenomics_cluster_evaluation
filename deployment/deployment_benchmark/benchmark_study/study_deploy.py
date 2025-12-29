@@ -369,7 +369,7 @@ if __name__ == "__main__":
         crosshit_modeller
     )
 
-
+    taxids_to_use.to_csv(os.path.join(analysis_output_filepath, "taxids_to_use.tsv"), sep="\t", index=False)
     test_results_df.to_csv(os.path.join(analysis_output_filepath, "test_datasets_overall_precision.tsv"), sep="\t", index=False)
     trash_results_df.to_csv(os.path.join(analysis_output_filepath, "test_datasets_trash_composition.tsv"), sep="\t", index=False)
     cross_hit_results_df.to_csv(os.path.join(analysis_output_filepath, "test_datasets_cross_hit_composition.tsv"), sep="\t", index=False)
