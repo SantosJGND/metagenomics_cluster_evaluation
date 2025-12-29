@@ -3,7 +3,8 @@
 from typing import List, Optional
 
 from xgboost import XGBClassifier
-
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.multioutput import MultiOutputRegressor
 from utils.overlap_manager import OverlapManager
 import pandas as pd
 from utils.overlap_manager_stats import node_composition_level, node_leaf_shannon_tax_diversity, node_total_true_leaves
@@ -13,6 +14,7 @@ import numpy as np
 from utils.overlap_manager_stats import get_m_stats_matrix, normalize_by_taxlevel, get_composition_by_leaf
 from utils.overlap_manager_stats import get_subset_composition_counts
 from utils.stats import shannon_diversity_from_list, skewness, kurtosis
+import joblib
 
 ########################################################################################################
 ########################################################################################################
@@ -192,7 +194,7 @@ def predict_recall_cutoff_vars(data_set_divide:int, data_set_name: str, m_stats_
 
 class RecallModeller:
 
-    model_save_filename = "recall_xgb_model.json"
+    model_save_filename = "recall_xgb_bundle.pkl"
 
     def __init__(self, recall_trainning_results, data_set_divide: int):
         self.recall_trainning_results = recall_trainning_results.drop(columns=['data_set'])
@@ -203,7 +205,7 @@ class RecallModeller:
         ] + [f'index_recall_{i}' for i in range(1, data_set_divide + 1)]
 
         self.RecP_feature_cols = self.recall_trainning_results.columns.difference(self.RecP_target_cols).tolist()
-        self.model: Optional[XGBClassifier] = None
+        self.model: Optional[MultiOutputRegressor] = None
 
 
     def prep_data(self):
@@ -218,8 +220,7 @@ class RecallModeller:
         return X_train, X_test, Y_train, Y_test
     
     def multioutput_regressor(self, X_train, Y_train):
-        from sklearn.ensemble import RandomForestRegressor
-        from sklearn.multioutput import MultiOutputRegressor
+
 
         rf = RandomForestRegressor(n_estimators=100, random_state=42)
         multi_rf = MultiOutputRegressor(rf)
@@ -234,14 +235,21 @@ class RecallModeller:
 
     def save_model(self, output_directory: str):
         if self.model is not None:
-            self.model.save_model(os.path.join(output_directory, self.model_save_filename))
+            joblib.dump({
+                'model': self.model,
+                'feature_names': self.RecP_feature_cols,
+                'target_names': self.RecP_target_cols
+            }, os.path.join(output_directory, self.model_save_filename))
         else:
             print("No model to save.")
 
     def load_model(self, input_directory: str):
         try:
             self.model = XGBClassifier()
-            self.model.load_model(os.path.join(input_directory, self.model_save_filename))
+            bundle = joblib.load(os.path.join(input_directory, self.model_save_filename))
+            self.model = bundle['model']
+            self.RecP_feature_cols = bundle['feature_names']
+            self.RecP_target_cols = bundle['target_names']
         except Exception as e:
             print(f"Error loading model: {e}")
 
@@ -331,7 +339,7 @@ def cut_off_recall_prediction(study_output_filepath: str, data_set_name: str, mo
 
 class CompositionModeller:
 
-    model_save_filename = "composition_xgb_model.json"
+    model_save_filename = "composition_xgb_bundle.pkl"
 
     def __init__(self, trainning_results_df):
         self.trainning_results_df = trainning_results_df
@@ -428,7 +436,10 @@ class CompositionModeller:
     
     def save_model(self, output_directory: str):
         if self.model is not None:
-            self.model.save_model(os.path.join(output_directory, self.model_save_filename))
+            joblib.dump({
+                'model': self.model, 
+                'scaler': self.scaler,
+            }, os.path.join(output_directory, self.model_save_filename))
         else:
             print("No model to save.")
     
@@ -558,7 +569,7 @@ class CompositionModeller:
 
 class CrossHitModeller:
 
-    model_save_filename = "cross_hit_xgb_model.json"
+    model_save_filename = "cross_hit_xgb_bundle.pkl"
 
     def __init__(self, prediction_trainning_results_df):
         self.prediction_trainning_results_df = prediction_trainning_results_df
@@ -653,8 +664,11 @@ class CrossHitModeller:
     def save_model(self, output_directory: str):
 
         if self.model is not None:
-            self.model.save_model(os.path.join(output_directory, self.model_save_filename))
-        else: 
+            joblib.dump({
+                'model': self.model,
+                'scaler': self.scaler,
+            }, os.path.join(output_directory, self.model_save_filename))
+        else:
             print("No model to save.")
 
     def load_model(self, input_directory: str):
