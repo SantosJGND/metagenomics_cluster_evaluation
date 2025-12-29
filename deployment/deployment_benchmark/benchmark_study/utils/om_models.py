@@ -614,11 +614,12 @@ class CrossHitModeller:
         model.fit(X_train, y_train)
         return model
     
-    def train_model(self, optimized: bool = False, **kwargs):
+    def train_model(self, optimized: bool = True, **kwargs):
         if optimized:
             return self.train_model_bayes_optimized()
         X_train, X_test, y_train, y_test = self.prep_data()
         model = self.xgbc_model(X_train, y_train, **kwargs)
+        self.model = model
         return model, X_test, y_test
     
     def train_model_bayes_optimized(self):
