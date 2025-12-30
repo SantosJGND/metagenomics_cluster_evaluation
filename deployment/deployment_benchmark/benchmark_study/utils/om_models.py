@@ -706,8 +706,8 @@ def cross_hit_prediction(data_set_name,
     pred_stats_cols = modeller.pred_stats_cols
     
     if modeller.scaler is not None:
-        X_pred_stats = X_pred
-        X_pred_stats[modeller.pred_stats_cols] = modeller.scaler.transform(X_pred_stats[modeller.pred_stats_cols])
+        X_pred_scaled = X_pred
+        X_pred_scaled[modeller.pred_stats_cols] = modeller.scaler.transform(X_pred_stats[modeller.pred_stats_cols])
     else:
         X_pred_scaled = X_pred
     
