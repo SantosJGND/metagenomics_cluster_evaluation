@@ -575,7 +575,7 @@ class CrossHitModeller:
     def __init__(self, prediction_trainning_results_df):
         self.prediction_trainning_results_df = prediction_trainning_results_df
         self.X = self.prediction_trainning_results_df.drop(columns=['leaf', 'is_trash'])
-        self.pred_stats_cols = ['coverage', 'covbases', 'meanmapq', 'error_rate', 'max_shared']
+        self.pred_stats_cols = ['coverage', 'covbases', 'meanmapq', 'error_rate', 'max_shared', 'total_uniq_reads']
         self.y = self.prediction_trainning_results_df['is_trash'].astype(int)
         self.scaler = None
         self.pca = None
@@ -703,13 +703,11 @@ def cross_hit_prediction(data_set_name,
 
     
     X_pred = prediction_matrix.drop(columns=['leaf', 'is_trash'])
-    pred_stats_cols = ['coverage', 'covbases', 'meanmapq', 'error_rate', 'max_shared']
+    pred_stats_cols = modeller.pred_stats_cols
     
     if modeller.scaler is not None:
-        X_pred_stats = X_pred[pred_stats_cols]
-        X_pred_tax = X_pred.drop(columns=pred_stats_cols)
-        X_pred_stats_scaled = pd.DataFrame(modeller.scaler.transform(X_pred_stats), columns=X_pred_stats.columns)
-        X_pred_scaled = pd.concat([X_pred_tax.reset_index(drop=True), X_pred_stats_scaled.reset_index(drop=True)], axis=1)
+        X_pred_stats = X_pred
+        X_pred_stats[modeller.pred_stats_cols] = modeller.scaler.transform(X_pred_stats[modeller.pred_stats_cols])
     else:
         X_pred_scaled = X_pred
     
@@ -718,7 +716,7 @@ def cross_hit_prediction(data_set_name,
         X_pred_tax = X_pred_scaled.drop(columns=pred_stats_cols)
         X_pred_tax_pca = pd.DataFrame(modeller.pca.transform(X_pred_tax))
         X_pred_tax_pca.columns = [f'pca_{i+1}' for i in range(X_pred_tax_pca.shape[1])]
-        X_pred_scaled = pd.concat([X_pred_tax_pca.reset_index(drop=True), X_pred_stats.reset_index(drop=True)], axis=1)
+        X_pred_scaled = pd.concat([X_pred_stats.reset_index(drop=True), X_pred_tax_pca.reset_index(drop=True)], axis=1)
     
     if modeller.model is None:
         y_prob = np.zeros(X_pred_scaled.shape[0])
