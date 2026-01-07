@@ -271,6 +271,7 @@ def get_args():
     parser.add_argument("--data_set_divide", type=int, default=5, help="Data set divide for training/testing")
     parser.add_argument("--holdout_proportion", type=float, default=0.3, help="Proportion of data to hold out for testing")
     parser.add_argument("--output_db_dir", type=str, required=True, help="Path to the output database directory")
+    parser.add_argument("--max_trainning", type=str, default=None, help="Maximum number of training datasets to use")
     return parser.parse_args()
 
 
@@ -285,6 +286,7 @@ if __name__ == "__main__":
     data_set_divide = args.data_set_divide
     holdout_proportion = args.holdout_proportion
     proportion_train = 1 - holdout_proportion
+    max_trainning = args.max_trainning
 
     #study_output_filepath = "/home/bioinf/Desktop/INSA/Projectos/CLUSTER_EVAL/study/studies/model/output/study_simulation_virus"
     #taxid_plan_filepath = "/home/bioinf/Desktop/INSA/Projectos/CLUSTER_EVAL/test_run/tables/db/assessment_virus.tsv"
@@ -316,7 +318,9 @@ if __name__ == "__main__":
     taxid_plan = taxid_plan[['taxid', 'description','lineage']].drop_duplicates(subset=['taxid'])
     folders = [f for f in os.listdir(study_output_filepath) if os.path.isdir(os.path.join(study_output_filepath, f))]
     from random import sample
-    folders = sample(folders, 300)
+    if max_trainning is not None:
+        if len(folders) > int(max_trainning):
+            folders = sample(folders, int(max_trainning))
 
     all_input_data = retrieve_simulation_input(study_output_filepath)
     ncbi_wrapper = NCBITaxonomistWrapper(db=output_db)
