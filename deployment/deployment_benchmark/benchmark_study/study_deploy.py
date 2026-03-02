@@ -211,7 +211,6 @@ def compound_eda_function(remaining_folders,
             input_df_summary.loc[:, 'cleanup_accuracy'] = sum(cross_hit_predictions['is_trash']) / cross_hit_predictions.shape[0] if cross_hit_predictions.shape[0] > 0 else 0.0
 
             if cross_hit_predictions.empty is False:
-
                 if len(overlap_manager.leaves) == 0:
                     continue
 

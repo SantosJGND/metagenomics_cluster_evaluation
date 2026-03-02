@@ -12,6 +12,7 @@ import pandas as pd
 import time
 import dotenv
 from typing import Tuple
+import logging
 dotenv.load_dotenv()
 
 Entrez.email = os.getenv("NCBI_EMAIL", None)
@@ -43,6 +44,11 @@ class NCBITaxonomistWrapper:
         self.temp_dir = temp_dir
         self.lineages: dict[int, dict[str, dict[str, str]]] = {}
         self.max_fetch = 30 # max taxids to fetch at once
+        self.logger = logging.getLogger(__name__)
+        logging.basicConfig(level=logging.INFO)
+
+        self.logger.info("NCBI Taxonomist Wrapper initialized.")
+        
 
     def retrieve_lineages_cmd_local(self, taxids: List[int]) -> str:
         """
@@ -52,7 +58,7 @@ class NCBITaxonomistWrapper:
         taxids_str = ",".join(str(t) for t in taxids)
 
         cmd = f"ncbi-taxonomist resolve -t {taxids_str} -db {self.db_path} "
-        print("Retrieving taxids from local database:", cmd)
+        self.logger.info("Retrieving taxids from local database")
 
         return cmd
 
@@ -62,7 +68,6 @@ class NCBITaxonomistWrapper:
         taxids_str = ",".join(str(t) for t in taxids)
 
         cmd = f"ncbi-taxonomist resolve -t {taxids_str} --remote | ncbi-taxonomist import --database {self.db_path} "
-        print("Importing taxids from NCBI:", cmd)
 
         return cmd
     
@@ -89,9 +94,8 @@ class NCBITaxonomistWrapper:
         lineage_dict = self.parse_lineages_output(output)
 
         missing = set(taxids) - set(lineage_dict.keys())
-        print("Missing taxids after local retrieval:", missing)
+        self.logger.info(f"Retrieved lineages for {len(lineage_dict)} taxids from local database. Missing {len(missing)} taxids.")
         if missing:
-            print(f"Missing taxids: {missing}. Trying to import them from NCBI...")
             for taxid_chunk in self.split_taxids(list(missing), chunk_size=self.max_fetch):
                 cmd = self.retrieve_lineages_cmd_import(list(taxid_chunk))
                 stream = os.popen(cmd)
@@ -104,8 +108,8 @@ class NCBITaxonomistWrapper:
 
         still_missing = set(taxids) - set(self.lineages.keys())
         if still_missing:
-            print(f"Still missing taxids: {still_missing}.")
-        
+            self.logger.info(f"Still missing taxids: {len(still_missing)}")
+
         for taxid in still_missing:
             lineage = get_lineage(str(taxid))
             if lineage is not None:
@@ -114,9 +118,9 @@ class NCBITaxonomistWrapper:
                     level: {'name': parser.get_level(level), 'taxid': None, 'level': i}
                     for i, level in enumerate(NCBI_TAXONOMY_LEVELS) if parser.get_level(level) is not None
                 }
-        
-        print(f"Updated lineage dictionary with {len(self.lineages)} entries.")
-        print(f"Still missing taxids after NCBI fetch: {set(taxids) - set(self.lineages.keys())}")
+
+        self.logger.info(f"Updated lineage dictionary with {len(self.lineages)} entries.")
+        self.logger.info(f"Still missing taxids after NCBI fetch: {len(set(taxids) - set(self.lineages.keys()))}")
 
     def update_lineages(self, taxids: List[int]) -> None:
         """
@@ -126,7 +130,7 @@ class NCBITaxonomistWrapper:
         - If some taxids are still missing, try to import them from NCBI."""
         missing = set(taxids) - set(self.lineages.keys())
         if missing:
-            print(f"Missing taxids: {missing}. Trying to import them from NCBI...")
+            self.logger.info(f"Missing taxids: {len(missing)}. Trying to import them from NCBI...")
             for taxid_chunk in self.split_taxids(list(missing), chunk_size=self.max_fetch):
                 cmd = self.retrieve_lineages_cmd_import(list(taxid_chunk))
 
@@ -138,8 +142,8 @@ class NCBITaxonomistWrapper:
 
         still_missing = set(taxids) - set(self.lineages.keys())
         if still_missing:
-            print(f"Still missing taxids: {still_missing}.")
-        
+            self.logger.info(f"Still missing taxids: {len(still_missing)}.")
+
         for taxid in still_missing:
             lineage = get_lineage(str(taxid))
             if lineage is not None:
@@ -148,9 +152,9 @@ class NCBITaxonomistWrapper:
                     level: {'name': parser.get_level(level), 'taxid': None, 'level': i}
                     for i, level in enumerate(NCBI_TAXONOMY_LEVELS) if parser.get_level(level) is not None
                 }
-        
-        print(f"Updated lineage dictionary with {len(self.lineages)} entries.")
-        print(f"Still missing taxids after NCBI fetch: {set(taxids) - set(self.lineages.keys())}")
+
+        self.logger.info(f"Updated lineage dictionary with {len(self.lineages)} entries.")
+        self.logger.info(f"Still missing taxids after NCBI fetch: {len(set(taxids) - set(self.lineages.keys()))}")
 
     def parse_lineages_output(self, output: str) -> dict:
         """
