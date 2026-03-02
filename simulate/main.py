@@ -45,7 +45,6 @@ def simulate_wgsim_illumina(reference_genome, output_prefix, wgsim_args):
     log_run_file = f"{output_prefix}_wgsim.log"
     log_plan_file = f"{output_prefix}_wgsim_plan.log"
     command = f"wgsim {wgsim_args} {reference_genome} {output_prefix}_1.fq {output_prefix}_2.fq > {log_plan_file} 2> {log_run_file}"
-    print(command)
 
     os.system(command)
     
