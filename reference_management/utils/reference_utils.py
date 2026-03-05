@@ -2,8 +2,28 @@
 import logging
 import os
 import pandas as pd
+import time
 from typing import Optional
 from utils.ncbi_tools import Passport, NCBITools, LocalAssembly, ReferenceData
+
+
+class RateLimiter:
+    """
+    Simple rate limiter to prevent hitting NCBI API rate limits.
+    """
+    def __init__(self, delay_between_calls: float = 0.5):
+        self.delay = delay_between_calls
+        self.last_call = 0
+    
+    def wait(self):
+        elapsed = time.time() - self.last_call
+        if elapsed < self.delay:
+            time.sleep(self.delay - elapsed)
+        self.last_call = time.time()
+
+
+# Global rate limiter instance
+_rate_limiter = RateLimiter(delay_between_calls=0.5)
 
 def dl_file(url: str, dest: str) -> None:
     """
@@ -111,6 +131,7 @@ class AssemblyStore:
     ) -> pd.DataFrame:
         """
         Match taxids from the classification output to their respective assemblies.
+        Tracks failed taxids for later retry or debugging.
         """
         if not os.path.exists(classification_output_path):
             raise FileNotFoundError(f"Classification output file not found: {classification_output_path}")
@@ -147,42 +168,65 @@ class AssemblyStore:
         if taxid_col is False and accid_col is False:
             raise ValueError("The classification output file must contain a taxonomic ID column [taxid, taxID or taxon] or an accession column [assembly_accession, accession, accID or accid].")
 
+        # Track failed taxids for debugging and retry
+        failed_taxids = []
+        
+        # Use rate limiter to avoid NCBI API rate limits
+        rate_limiter = RateLimiter(delay_between_calls=0.5)
+        
         for index, row in df.iterrows():
+            # Apply rate limiting between NCBI calls
+            rate_limiter.wait()
             taxid = str(int(row['taxid'])) if taxid_col == True else None
             accession = str(row['accid']) if accid_col == True else None
             if taxid is None and accession is None:
                 self.logger.warning(f"Skipping row {index} due to missing taxid and accession.")
                 continue
-            self.logger.info(f"Processing taxid {taxid}...")
-            reference = None
-            description = None
-            if "description" in row and row['description'] is not None:
-                description = str(row['description'])
-            if 'nucleotide_id' in row and 'assembly_id' in row:
-                if row['nucleotide_id'] is not None and not pd.isna(row['nucleotide_id']):
-                    reference = ReferenceData(
-                        taxid=taxid,
-                        accession=accession,
-                        nucleotide_id=str(int(row['nucleotide_id'])),
-                        assembly_id=None
-                    )
-                elif row['assembly_id'] is not None and not pd.isna(row['assembly_id']):
-                    reference = ReferenceData(
-                        taxid=taxid,
-                        accession=accession,
-                        nucleotide_id=None,
-                        assembly_id=str(int(row['assembly_id']))
-                    )
-            passport = Passport(taxid=taxid, accession=accession)
-            local_assembly = self.retrieve_assembly(passport, reference_data=reference, include_term=include_term, exclude_term=exclude_term)
+            
+            try:
+                self.logger.info(f"Processing taxid {taxid}...")
+                reference = None
+                description = None
+                if "description" in row and row['description'] is not None:
+                    description = str(row['description'])
+                if 'nucleotide_id' in row and 'assembly_id' in row:
+                    if row['nucleotide_id'] is not None and not pd.isna(row['nucleotide_id']):
+                        reference = ReferenceData(
+                            taxid=taxid,
+                            accession=accession,
+                            nucleotide_id=str(int(row['nucleotide_id'])),
+                            assembly_id=None
+                        )
+                    elif row['assembly_id'] is not None and not pd.isna(row['assembly_id']):
+                        reference = ReferenceData(
+                            taxid=taxid,
+                            accession=accession,
+                            nucleotide_id=None,
+                            assembly_id=str(int(row['assembly_id']))
+                        )
+                passport = Passport(taxid=taxid, accession=accession)
+                local_assembly = self.retrieve_assembly(passport, reference_data=reference, include_term=include_term, exclude_term=exclude_term)
 
-            if local_assembly:
-                df.at[index, 'assembly_accession'] = local_assembly.accession
-                df.at[index, 'assembly_file'] = local_assembly.file_path
-            else:
-                self.logger.warning(f"No assembly found for taxid {taxid} and accession {accession}.")
+                if local_assembly:
+                    df.at[index, 'assembly_accession'] = local_assembly.accession
+                    df.at[index, 'assembly_file'] = local_assembly.file_path
+                else:
+                    self.logger.warning(f"No assembly found for taxid {taxid} and accession {accession}.")
+                    failed_taxids.append({'taxid': taxid, 'accession': accession, 'error': 'No assembly found'})
+                    df.at[index, 'assembly_accession'] = None
+                    df.at[index, 'assembly_file'] = None
+            except Exception as e:
+                self.logger.error(f"Error processing taxid {taxid}: {e}")
+                failed_taxids.append({'taxid': taxid, 'accession': accession, 'error': str(e)})
                 df.at[index, 'assembly_accession'] = None
                 df.at[index, 'assembly_file'] = None
+        
+        # Save failed taxids for debugging and manual retry
+        if failed_taxids:
+            failed_df = pd.DataFrame(failed_taxids)
+            failed_file = os.path.join(self.store_path, 'failed_taxids.tsv')
+            failed_df.to_csv(failed_file, sep='\t', index=False)
+            self.logger.warning(f"Saved {len(failed_taxids)} failed taxids to {failed_file}")
         
         if df.empty:
             df = pd.DataFrame(columns=['taxid', 'assembly_accession', 'assembly_file'])

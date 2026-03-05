@@ -5,11 +5,50 @@ import os
 import subprocess
 from dataclasses import dataclass
 from typing import Tuple, Optional
-# read email from local .env file
+import time
+import requests
+from functools import wraps
 import numpy as np
 import dotenv
 dotenv.load_dotenv()
 import pandas as pd
+
+
+def retry_with_backoff(max_retries=3, initial_delay=1, backoff_factor=2):
+    """
+    Decorator for retrying functions with exponential backoff.
+    Handles transient errors like rate limiting (429) and temporary network issues.
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            delay = initial_delay
+            last_exception = None
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_exception = e
+                    error_msg = str(e).lower()
+                    # Retry on rate limiting, temporary failures, or network issues
+                    should_retry = any(x in error_msg for x in [
+                        '429', 'rate limit', 'temporary failure',
+                        'connection', 'timeout', 'service unavailable',
+                        '500', '502', '503', '504'
+                    ])
+                    if not should_retry and attempt > 0:
+                        # Also retry on first two attempts for any error
+                        should_retry = attempt < 2
+                    
+                    if should_retry and attempt < max_retries - 1:
+                        logging.warning(f"Attempt {attempt + 1}/{max_retries} failed for {func.__name__}: {e}. Retrying in {delay}s...")
+                        time.sleep(delay)
+                        delay *= backoff_factor
+                    elif attempt == max_retries - 1:
+                        logging.error(f"All {max_retries} attempts failed for {func.__name__}: {e}")
+            raise last_exception
+        return wrapper
+    return decorator
 
 Entrez.email = os.getenv("NCBI_EMAIL", None)
 if Entrez.email is None:
@@ -97,6 +136,7 @@ class ReferenceData(Passport):
         return f"TaxID: {self.taxid}, Accession: {self.accession}, Description: {self.description}, Nucleotide ID: {self.nucleotide_id}, Assembly ID: {self.assembly_id}"
 
 
+@retry_with_backoff(max_retries=3, initial_delay=1)
 def retrieve_passport_taxonomy(taxid: str) -> Optional[str]:
     """
     Retrieve taxonomy information for a given taxid.
@@ -115,6 +155,7 @@ def retrieve_passport_taxonomy(taxid: str) -> Optional[str]:
         return None
 
 
+@retry_with_backoff(max_retries=3, initial_delay=1)
 def retrieve_reference_sequence_id(accID: str, include_term = None, exclude_term=None) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """
     Retrieve NCBI sequence ID for a given accession ID.
@@ -157,6 +198,7 @@ def retrieve_reference_sequence_id(accID: str, include_term = None, exclude_term
 
 
 
+@retry_with_backoff(max_retries=3, initial_delay=1)
 def get_reference_sequence_url(taxid, include_term=None, exclude_term=None) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     """
     Retrieve the reference sequence URL for a given taxid from the nucleotide database.
@@ -202,6 +244,7 @@ def get_reference_sequence_url(taxid, include_term=None, exclude_term=None) -> T
         return None, None, None
 
 
+@retry_with_backoff(max_retries=3, initial_delay=1)
 def get_representative_assembly(taxid, include_term= None, exclude_term = None) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     try:
         # Search for assemblies for the given taxid
@@ -235,6 +278,7 @@ def get_representative_assembly(taxid, include_term= None, exclude_term = None) 
         return None, None, None
 
 
+@retry_with_backoff(max_retries=3, initial_delay=2)
 def retrieve_reference_sequence(nucleotide_id, output_path, gzipped=True) -> bool:
     """
     Download the reference sequence file given a nucleotide ID.
@@ -256,6 +300,7 @@ def retrieve_reference_sequence(nucleotide_id, output_path, gzipped=True) -> boo
         return False
 
 
+@retry_with_backoff(max_retries=3, initial_delay=2)
 def retrieve_assembly_sequence(assembly_id, output_path) -> bool:
     """
     Download the assembly sequence file given an assembly ID.
@@ -272,7 +317,7 @@ def retrieve_assembly_sequence(assembly_id, output_path) -> bool:
         asm_name = ftp_path.split('/')[-1]
         fasta_url = f"{ftp_path}/{asm_name}_genomic.fna.gz"
         # Download the file
-        result = subprocess.run(['wget', '-O', output_path, fasta_url], capture_output=True, check= False)
+        result = subprocess.run(['wget', '-O', output_path, fasta_url], capture_output=True)
         if result.returncode != 0:
             raise RuntimeError(f"Failed to download file: {result.stderr.decode()}")
         return True
@@ -280,7 +325,6 @@ def retrieve_assembly_sequence(assembly_id, output_path) -> bool:
     except Exception as e:
         print(f"An error occurred while downloading assembly: {e}")
         return False
-
 
 
 class NCBITools:
