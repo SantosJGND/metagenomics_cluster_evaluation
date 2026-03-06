@@ -105,6 +105,9 @@ class AssemblyStore:
         # Assuming the first file is the assembly file
         assembly_file = [x for x in files if x.endswith('.gz')]
 
+        ## remove anything below 50B to avoid empty files
+        assembly_file = [x for x in assembly_file if os.path.getsize(os.path.join(taxid_subdir, x)) >= 50]
+
         # sort by size and select first
         assembly_file_sizes = {
             f: os.path.getsize(os.path.join(taxid_subdir, f))
@@ -118,9 +121,9 @@ class AssemblyStore:
         
         accid = passport.accession
         if accid is None:
-            accid = "_".join(files[0].split('_')[:2]) if assembly_file else None
+            accid = assembly_file.strip(f"{passport.taxid}_").strip('_sequence.fasta.gz')
 
-        return LocalAssembly(taxid=passport.taxid, accession=accid, file_path=os.path.join(taxid_subdir, assembly_file[0])) if assembly_file else None
+        return LocalAssembly(taxid=passport.taxid, accession=accid, file_path=os.path.join(taxid_subdir, assembly_file)) if assembly_file else None
 
 
 
