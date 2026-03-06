@@ -1,6 +1,7 @@
 
 import logging
 import os
+from pyparsing import Path
 import pandas as pd
 import time
 from typing import Optional
@@ -82,17 +83,45 @@ class AssemblyStore:
         """
         Check if the assembly for the given taxid exists in the assembly store.
         """
-        taxid_subdir = f"{self.store_path}/{passport.taxid}"
+        if passport.taxid is None:
+            self.logger.warning(f"No taxid provided in passport")
+            return None
+
+        taxid_subdir = Path(self.store_path) / passport.taxid
+
+        if not taxid_subdir.exists():
+            self.logger.warning(f"No assembly directory found for taxid {passport.taxid}")
+            return None
+        
+
+        files = [f for f in os.listdir(taxid_subdir) if f.startswith(passport.prefix) and f.endswith('.gz')]
+        if len(files) == 0:
+            files = [f for f in os.listdir(taxid_subdir) if f.endswith('.gz')]
+
+        if len(files) == 0:
+            self.logger.warning(f"No assembly files found for Passport {passport}")
+            return None
 
         # Assuming the first file is the assembly file
-        assembly_file = os.path.join(taxid_subdir, f"{passport.prefix}_sequence.fasta.gz")
+        assembly_file = [x for x in files if x.endswith('.gz')]
 
-        if not os.path.exists(assembly_file):
+        # sort by size and select first
+        assembly_file_sizes = {
+            f: os.path.getsize(os.path.join(taxid_subdir, f))
+            for f in files
+        }
+        assembly_file = sorted(assembly_file_sizes, key=assembly_file_sizes.get, reverse=True)[0] if assembly_file_sizes else None
+
+        if not assembly_file:
             self.logger.warning(f"No assembly file found for taxid {passport.taxid} and accession {passport.accession}")
             return None
+        
         accid = passport.accession
+        if accid is None:
+            accid = "_".join(files[0].split('_')[:2]) if assembly_file else None
 
-        return LocalAssembly(taxid=passport.taxid, accession=accid, file_path=assembly_file) if assembly_file else None
+        return LocalAssembly(taxid=passport.taxid, accession=accid, file_path=os.path.join(taxid_subdir, assembly_file[0])) if assembly_file else None
+
 
 
     def retrieve_assembly(self, passport: Passport, reference_data: Optional[ReferenceData] = None, include_term: Optional[str] = None, exclude_term: Optional[str] = None) -> Optional[LocalAssembly]:

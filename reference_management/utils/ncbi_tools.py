@@ -116,6 +116,10 @@ class Passport:
     def compare_lineage(self, other_lineage: Optional[str]) -> tuple[float, Optional[str]]:
         return compare_lineages(self.lineage, other_lineage)
 
+    def __str__(self):
+        return f"TaxID: {self.taxid}, Accession: {self.accession}, Lineage: {self.lineage}, Description: {self.description}"
+
+    
     
 @dataclass
 class LocalAssembly(Passport):
